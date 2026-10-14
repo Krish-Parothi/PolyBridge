@@ -153,6 +153,8 @@ class JavaScriptEmitter:
                 op = "&&"
             elif op == "or":
                 op = "||"
+            elif op == "//" or (op == "/" and expr.inferred_type.kind == TypeKind.INT):
+                return f"Math.floor(({left_str}) / ({right_str}))"
             return f"({left_str} {op} {right_str})"
 
         elif isinstance(expr, UnaryOp):

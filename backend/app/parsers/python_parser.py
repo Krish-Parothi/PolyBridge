@@ -153,6 +153,14 @@ class PythonParser:
                     break
             return [ReturnStmt(value=val)]
 
+        elif ntype == "block":
+            stmts: List[Statement] = []
+            for c in node.children:
+                s = self._parse_statement(c, code_bytes)
+                if s:
+                    stmts.extend(s)
+            return stmts
+
         return []
 
     def _parse_assignment(self, node: Node, code_bytes: bytes) -> List[Statement]:
@@ -186,7 +194,6 @@ class PythonParser:
     def _parse_if(self, node: Node, code_bytes: bytes) -> List[Statement]:
         cond_node = node.child_by_field_name("condition")
         consequence_node = node.child_by_field_name("consequence")
-        alternative_node = node.child_by_field_name("alternative")
 
         cond = self._parse_expression(cond_node, code_bytes) if cond_node else Literal(True)
         then_branch: List[Statement] = []
@@ -197,25 +204,44 @@ class PythonParser:
                     then_branch.extend(s)
 
         else_branch: List[Statement] = []
-        if alternative_node:
-            # alternative could be elif_clause or else_clause
-            for c in alternative_node.children:
-                if c.type in ["elif_clause", "if_statement"]:
-                    s = self._parse_if(c, code_bytes)
-                    else_branch.extend(s)
-                elif c.type == "else_clause":
-                    body = c.child_by_field_name("body")
-                    if body:
-                        for bc in body.children:
-                            s = self._parse_statement(bc, code_bytes)
-                            if s:
-                                else_branch.extend(s)
-                elif c.type not in ["else", ":"]:
-                    s = self._parse_statement(c, code_bytes)
-                    if s:
-                        else_branch.extend(s)
+        clauses = [c for c in node.children if c.type in ["elif_clause", "else_clause"]]
+        if clauses:
+            else_branch = self._parse_clause_chain(clauses, code_bytes)
 
         return [IfStmt(condition=cond, then_branch=then_branch, else_branch=else_branch)]
+
+    def _parse_clause_chain(self, clauses: List[Node], code_bytes: bytes) -> List[Statement]:
+        if not clauses:
+            return []
+        first = clauses[0]
+        rest = clauses[1:]
+        if first.type == "else_clause":
+            body = first.child_by_field_name("body")
+            stmts: List[Statement] = []
+            if body:
+                for c in body.children:
+                    s = self._parse_statement(c, code_bytes)
+                    if s:
+                        stmts.extend(s)
+            return stmts
+        elif first.type == "elif_clause":
+            cond_node = first.child_by_field_name("condition") or (first.children[1] if len(first.children) > 1 else None)
+            consequence_node = first.child_by_field_name("consequence")
+            if not consequence_node:
+                for c in first.children:
+                    if c.type == "block":
+                        consequence_node = c
+                        break
+            cond = self._parse_expression(cond_node, code_bytes) if cond_node else Literal(True)
+            then_branch: List[Statement] = []
+            if consequence_node:
+                for c in consequence_node.children:
+                    s = self._parse_statement(c, code_bytes)
+                    if s:
+                        then_branch.extend(s)
+            nested_else = self._parse_clause_chain(rest, code_bytes)
+            return [IfStmt(condition=cond, then_branch=then_branch, else_branch=nested_else)]
+        return []
 
     def _parse_for(self, node: Node, code_bytes: bytes) -> List[Statement]:
         left_node = node.child_by_field_name("left")

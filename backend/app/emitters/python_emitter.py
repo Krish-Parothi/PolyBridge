@@ -153,6 +153,12 @@ class PythonEmitter:
                 op = "and"
             elif op == "||":
                 op = "or"
+            elif op == "===":
+                op = "=="
+            elif op == "!==":
+                op = "!="
+            elif op == "/" and expr.inferred_type.kind == TypeKind.INT:
+                op = "//"
             return f"({left_str} {op} {right_str})"
 
         elif isinstance(expr, UnaryOp):

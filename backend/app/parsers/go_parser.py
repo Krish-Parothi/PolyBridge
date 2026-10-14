@@ -139,7 +139,14 @@ class GoParser:
             left_n = node.child_by_field_name("left")
             right_n = node.child_by_field_name("right")
             if left_n and right_n:
-                var_name = self._get_text(left_n, code_bytes)
+                var_name = ""
+                if left_n.type == "expression_list":
+                    for c in left_n.children:
+                        if c.type not in [",", ";"]:
+                            var_name = self._get_text(c, code_bytes)
+                            break
+                else:
+                    var_name = self._get_text(left_n, code_bytes)
                 val_expr = self._parse_expression(right_n, code_bytes)
                 return [VarDecl(name=var_name, var_type=IRType.unknown(), initializer=val_expr)]
 
@@ -228,6 +235,11 @@ class GoParser:
             else:
                 # while-like condition
                 cond_n = node.child_by_field_name("condition")
+                if not cond_n:
+                    for c in node.children:
+                        if c.type not in ["for", "block", "{", "}"]:
+                            cond_n = c
+                            break
                 cond = self._parse_expression(cond_n, code_bytes) if cond_n else Literal(True)
                 return [WhileStmt(condition=cond, body=body)]
 
@@ -284,6 +296,19 @@ class GoParser:
             return Literal(False)
         elif ntype == "identifier":
             return Identifier(name=self._get_text(node, code_bytes))
+
+        elif ntype == "expression_list":
+            for c in node.children:
+                if c.type not in [",", ";"]:
+                    expr = self._parse_expression(c, code_bytes)
+                    if expr is not None:
+                        return expr
+            return None
+
+        elif ntype == "literal_element":
+            if node.children:
+                return self._parse_expression(node.children[0], code_bytes)
+            return None
 
         elif ntype == "binary_expression":
             left_n = node.child_by_field_name("left")

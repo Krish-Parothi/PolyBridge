@@ -183,6 +183,12 @@ class GoEmitter:
                 op = "&&"
             elif op == "or":
                 op = "||"
+            elif op == "//":
+                op = "/"
+            elif op == "===":
+                op = "=="
+            elif op == "!==":
+                op = "!="
             return f"({left_str} {op} {right_str})"
 
         elif isinstance(expr, UnaryOp):

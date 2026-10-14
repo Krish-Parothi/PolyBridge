@@ -13,7 +13,7 @@ class LibraryRegistry:
     MATH_FUNCTIONS = {
         "sqrt": {"python": "math.sqrt", "java": "Math.sqrt", "javascript": "Math.sqrt", "go": "math.Sqrt", "cpp": "std::sqrt"},
         "pow": {"python": "math.pow", "java": "Math.pow", "javascript": "Math.pow", "go": "math.Pow", "cpp": "std::pow"},
-        "floor": {"python": "math.floor", "java": "Math.floor", "javascript": "Math.floor", "go": "math.Floor", "cpp": "std::floor"},
+        "floor": {"python": "math.floor", "java": "(int) Math.floor", "javascript": "Math.floor", "go": "math.Floor", "cpp": "std::floor"},
         "ceil": {"python": "math.ceil", "java": "Math.ceil", "javascript": "Math.ceil", "go": "math.Ceil", "cpp": "std::ceil"},
         "abs": {"python": "abs", "java": "Math.abs", "javascript": "Math.abs", "go": "math.Abs", "cpp": "std::abs"},
         "sin": {"python": "math.sin", "java": "Math.sin", "javascript": "Math.sin", "go": "math.Sin", "cpp": "std::sin"},
