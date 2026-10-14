@@ -50,8 +50,9 @@ res = bubble_sort(a)
 print(res)
 """
     ino = transpile_to_arduino(py_code, "python")
-    assert "std::vector<int>" in ino
-    assert "void printValue(const std::vector<T>& vec)" in ino
+    assert "Vector<int>" in ino
+    assert "template <typename T, size_t CAPACITY = 64>" in ino
+    assert "void printValue(const Vector<T, N>& vec)" in ino
     assert "printValue(res);" in ino
 
 def test_arduino_behavioral_equivalence():
@@ -90,3 +91,58 @@ def test_arduino_api_endpoints():
     vres = verify_behavior(vreq)
     assert vres.match is True
     assert vres.status == "verified_match"
+
+def test_user_bubble_sort_execution():
+    py_code = """def bubble_sort(arr):
+    n = len(arr)
+    for i in range(n):
+        for j in range(0, n - i - 1):
+            if arr[j] > arr[j + 1]:
+                temp = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = temp
+    return arr
+
+a = [64, 34, 25, 12, 22, 11, 90]
+res = bubble_sort(a)
+print(res)
+"""
+    req = TranspileRequest(source_code=py_code, source_lang="python", target_lang="arduino")
+    res = transpile(req)
+    assert res.success is True
+
+    vreq = VerifyRequest(
+        source_code=py_code,
+        source_lang="python",
+        target_code=res.target_code,
+        target_lang="arduino",
+        stdin_data=""
+    )
+    vres = verify_behavior(vreq)
+    assert vres.match is True
+    assert vres.status == "verified_match"
+
+@pytest.mark.parametrize("algo_name", ["bubble_sort", "fibonacci", "binary_search"])
+@pytest.mark.parametrize("src_lang", ["python", "javascript", "java", "go"])
+def test_all_algorithms_to_arduino(algo_name, src_lang):
+    from tests.test_algorithm_matrix import ALGORITHMS
+    from app.parsers.java_parser import JavaParser
+    from app.parsers.go_parser import GoParser
+
+    parsers = {
+        "python": PythonParser(),
+        "javascript": JavaScriptParser(),
+        "java": JavaParser(),
+        "go": GoParser()
+    }
+    src_code = ALGORITHMS[algo_name][src_lang]
+    prog = parsers[src_lang].parse(src_code)
+    inferrer = TypeInferrer()
+    prog = inferrer.infer_program(prog)
+    emitter = ArduinoEmitter()
+    ino = emitter.emit(prog)
+
+    res = CodeRunner.run_code(ino, "arduino")
+    assert res.exit_code == 0, f"Failed on {algo_name} from {src_lang}: {res.stderr}"
+    assert len(res.stdout.strip()) > 0
+
