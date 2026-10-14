@@ -50,8 +50,9 @@ res = bubble_sort(a)
 print(res)
 """
     ino = transpile_to_arduino(py_code, "python")
-    assert "std::vector<int>" in ino
-    assert "void printValue(const std::vector<T>& vec)" in ino
+    assert "Vector<int>" in ino
+    assert "template <typename T, size_t CAPACITY = 64>" in ino
+    assert "void printValue(const Vector<T, N>& vec)" in ino
     assert "printValue(res);" in ino
 
 def test_arduino_behavioral_equivalence():

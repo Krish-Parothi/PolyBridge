@@ -73,23 +73,63 @@ class ArduinoEmitter:
                 ""
             ])
 
+        if self.uses_vectors:
+            helpers.extend([
+                "// Lightweight embedded Vector container (zero dynamic heap allocation, AVR compatible)",
+                "template <typename T, size_t CAPACITY = 64>",
+                "struct Vector {",
+                f"{self.indent_str}T data[CAPACITY];",
+                f"{self.indent_str}size_t _size;",
+                "",
+                f"{self.indent_str}Vector() : _size(0) {{}}",
+                "",
+                f"{self.indent_str}Vector(std::initializer_list<T> list) : _size(0) {{",
+                f"{self.indent_str}{self.indent_str}for (const auto& item : list) {{",
+                f"{self.indent_str}{self.indent_str}{self.indent_str}if (_size < CAPACITY) data[_size++] = item;",
+                f"{self.indent_str}{self.indent_str}}}",
+                f"{self.indent_str}}}",
+                "",
+                f"{self.indent_str}Vector& operator=(std::initializer_list<T> list) {{",
+                f"{self.indent_str}{self.indent_str}_size = 0;",
+                f"{self.indent_str}{self.indent_str}for (const auto& item : list) {{",
+                f"{self.indent_str}{self.indent_str}{self.indent_str}if (_size < CAPACITY) data[_size++] = item;",
+                f"{self.indent_str}{self.indent_str}}}",
+                f"{self.indent_str}{self.indent_str}return *this;",
+                f"{self.indent_str}}}",
+                "",
+                f"{self.indent_str}size_t size() const {{ return _size; }}",
+                "",
+                f"{self.indent_str}void push_back(const T& val) {{",
+                f"{self.indent_str}{self.indent_str}if (_size < CAPACITY) data[_size++] = val;",
+                f"{self.indent_str}}}",
+                "",
+                f"{self.indent_str}T& operator[](size_t idx) {{ return data[idx]; }}",
+                f"{self.indent_str}const T& operator[](size_t idx) const {{ return data[idx]; }}",
+                "};",
+                ""
+            ])
+
         helpers.extend([
             "template <typename T>",
             "void printValue(const T& val) {",
             f"{self.indent_str}Serial.print(val);",
             "}",
-            "",
-            "template <typename T>",
-            "void printValue(const std::vector<T>& vec) {",
-            f"{self.indent_str}Serial.print(\"[\");",
-            f"{self.indent_str}for (size_t i = 0; i < vec.size(); i++) {{",
-            f"{self.indent_str}{self.indent_str}Serial.print(vec[i]);",
-            f"{self.indent_str}{self.indent_str}if (i + 1 < vec.size()) Serial.print(\", \");",
-            f"{self.indent_str}}}",
-            f"{self.indent_str}Serial.print(\"]\");",
-            "}",
             ""
         ])
+
+        if self.uses_vectors:
+            helpers.extend([
+                "template <typename T, size_t N>",
+                "void printValue(const Vector<T, N>& vec) {",
+                f"{self.indent_str}Serial.print(\"[\");",
+                f"{self.indent_str}for (size_t i = 0; i < vec.size(); i++) {{",
+                f"{self.indent_str}{self.indent_str}Serial.print(vec[i]);",
+                f"{self.indent_str}{self.indent_str}if (i + 1 < vec.size()) Serial.print(\", \");",
+                f"{self.indent_str}}}",
+                f"{self.indent_str}Serial.print(\"]\");",
+                "}",
+                ""
+            ])
 
         # Header Comments & Includes
         headers: List[str] = [
@@ -102,7 +142,7 @@ class ArduinoEmitter:
             "#include <Arduino.h>"
         ]
         if self.uses_vectors:
-            headers.append("#include <vector>")
+            headers.append("#include <initializer_list>")
         headers.append("")
 
         lines: List[str] = []
@@ -132,7 +172,7 @@ class ArduinoEmitter:
         elif t.kind == TypeKind.ARRAY:
             self.uses_vectors = True
             elem = self._to_arduino_type(t.element_type) if t.element_type else "int"
-            return f"std::vector<{elem}>"
+            return f"Vector<{elem}>"
         return "int"
 
     def _detect_array_usage(self, program: Program):
@@ -216,7 +256,7 @@ class ArduinoEmitter:
                 self.declared_vars.add(stmt.target.name)
                 val_str = self._emit_expr(stmt.value)
                 if isinstance(stmt.value, ArrayLiteral):
-                    t_str = "std::vector<int>"
+                    t_str = "Vector<int>"
                     self.var_types[stmt.target.name] = t_str
                     return [f"{ind}{t_str} {target_str} = {val_str};"]
                 elif stmt.target.inferred_type:
