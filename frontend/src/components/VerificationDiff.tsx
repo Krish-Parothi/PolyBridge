@@ -28,6 +28,7 @@ interface VerificationDiffProps {
   diagnostics: Array<{ line: number; column: number; severity: string; message: string }>;
   sourceLang: string;
   targetLang: string;
+  onAutoFixProcedural?: () => void;
 }
 
 export const VerificationDiff: React.FC<VerificationDiffProps> = ({
@@ -36,6 +37,7 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
   diagnostics,
   sourceLang,
   targetLang,
+  onAutoFixProcedural,
 }) => {
   if (isLoading) {
     return (
@@ -58,13 +60,39 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
 
   // Display Scope Violations if present
   const errors = diagnostics.filter((d) => d.severity === 'error');
+  const hasClassError = errors.some((e) => e.message.toLowerCase().includes('class'));
+
   if (errors.length > 0) {
     return (
-      <div style={{ padding: '12px 16px', overflowY: 'auto', height: '100%' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, color: '#f43f5e' }}>
-          <AlertTriangle size={18} />
-          <strong style={{ fontSize: 13 }}>Diagnostic Scope Violations Detected</strong>
+      <div style={{ padding: '12px 18px', overflowY: 'auto', height: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f43f5e' }}>
+            <AlertTriangle size={18} />
+            <strong style={{ fontSize: 13 }}>Diagnostic Scope Violations Detected</strong>
+          </div>
+          {hasClassError && onAutoFixProcedural && (
+            <button
+              onClick={onAutoFixProcedural}
+              style={{
+                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                padding: '4px 12px',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+              }}
+            >
+              ✨ Auto-Convert to Procedural
+            </button>
+          )}
         </div>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {errors.map((err, i) => (
             <div
@@ -72,8 +100,8 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
               style={{
                 padding: '8px 12px',
                 borderRadius: 6,
-                background: 'rgba(244, 63, 94, 0.1)',
-                border: '1px solid rgba(244, 63, 94, 0.3)',
+                background: 'rgba(244, 63, 94, 0.08)',
+                border: '1px solid rgba(244, 63, 94, 0.25)',
                 fontSize: 12,
                 color: '#fecdd3',
                 fontFamily: "'Fira Code', monospace",
@@ -83,6 +111,22 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
             </div>
           ))}
         </div>
+
+        {hasClassError && (
+          <div
+            style={{
+              padding: '10px 14px',
+              borderRadius: 6,
+              background: 'rgba(56, 189, 248, 0.06)',
+              border: '1px solid rgba(56, 189, 248, 0.2)',
+              fontSize: 12,
+              color: '#93c5fd',
+              lineHeight: 1.5,
+            }}
+          >
+            <strong>💡 Compiler Scope Rule:</strong> PolyBridge focuses on educational, transparent procedural algorithms (loops, functions, arrays, math). Standard Java classes (`public class Solution`) and LeetCode wrappers (`class Solution:`) are supported, but complex inheritance or custom OOP classes are excluded by specification design.
+          </div>
+        )}
       </div>
     );
   }

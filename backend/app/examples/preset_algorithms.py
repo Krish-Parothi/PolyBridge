@@ -115,6 +115,90 @@ items = [10, 20, 30, 40, 50]
 print(linear_search(items, 30))
 print(linear_search(items, 99))
 """
+    },
+    "math_operations": {
+        "title": "Math Library Demo",
+        "category": "Standard Library",
+        "description": "Uses math functions (sqrt, pow, floor) mapped across languages.",
+        "language": "python",
+        "code": """import math
+
+x = 16
+root = math.sqrt(x)
+power = math.pow(2, 8)
+flr = math.floor(3.75)
+print(root, power, flr)
+"""
+    },
+    "dataframe_pandas": {
+        "title": "Data Package (Pandas)",
+        "category": "Packages",
+        "description": "Demonstrates pandas dataframe operations mapped deterministically.",
+        "language": "python",
+        "code": """import pandas as pd
+
+df = pd.read_csv("data.csv")
+top = df.head(5)
+print(top)
+"""
+    },
+    "numpy_operations": {
+        "title": "NumPy Array Operations",
+        "category": "Packages",
+        "description": "Demonstrates numpy arrays, zeros, sum, max, and min operations mapped deterministically.",
+        "language": "python",
+        "code": """import numpy as np
+
+arr = np.array([10, 20, 30, 40, 50])
+total = np.sum(arr)
+max_val = np.max(arr)
+min_val = np.min(arr)
+print(total, max_val, min_val)
+"""
+    },
+    "recursive_factorial": {
+        "title": "Recursive Factorial",
+        "category": "Recursion",
+        "description": "Calculates factorial using pure functional recursion across languages.",
+        "language": "python",
+        "code": """def factorial(n):
+    if n <= 1:
+        return 1
+    return n * factorial(n - 1)
+
+ans = factorial(5)
+print(ans)
+"""
+    },
+    "recursive_fibonacci": {
+        "title": "Recursive Fibonacci",
+        "category": "Recursion",
+        "description": "Classic branching recursion calculating the nth Fibonacci number.",
+        "language": "python",
+        "code": """def fib(n):
+    if n <= 0:
+        return 0
+    if n == 1:
+        return 1
+    return fib(n - 1) + fib(n - 2)
+
+res = fib(7)
+print(res)
+"""
+    },
+    "gcd_euclid": {
+        "title": "Euclidean GCD",
+        "category": "Mathematics",
+        "description": "Greatest Common Divisor using recursive Euclidean modulo reduction.",
+        "language": "python",
+        "code": """def gcd(a, b):
+    if b == 0:
+        return a
+    return gcd(b, a % b)
+
+ans = gcd(48, 18)
+print(ans)
+"""
     }
 }
 

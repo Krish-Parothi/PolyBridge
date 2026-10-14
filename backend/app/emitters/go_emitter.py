@@ -1,4 +1,4 @@
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Dict
 from app.ir.nodes import (
         Program, FunctionDef, Parameter, Statement, Expression,
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
@@ -6,6 +6,7 @@ from app.ir.nodes import (
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
         FunctionCall, IRType, TypeKind
     )
+from app.libraries.registry import LibraryRegistry
 
 class GoEmitter:
     """Emits Go 1.21 code with package main and func main boilerplate."""
@@ -13,21 +14,46 @@ class GoEmitter:
     def __init__(self, indent_str: str = "\t"):
         self.indent_str = indent_str
         self.declared_vars: Set[str] = set()
+        self.used_imports: Set[str] = set()
+        self.module_aliases: Dict[str, str] = {}
 
     def emit(self, program: Program) -> str:
         self.declared_vars.clear()
-        lines: List[str] = ["package main", "", 'import "fmt"', ""]
+        self.used_imports = {'"fmt"'}
+        self.module_aliases.clear()
+
+        # Collect imported aliases and map module imports
+        for imp in getattr(program, "imports", []):
+            if imp.alias:
+                self.module_aliases[imp.alias] = imp.module
+            for ti in LibraryRegistry.get_target_imports({imp.module}, "go"):
+                self.used_imports.add(ti)
+
+        body_lines: List[str] = []
 
         # Emit functions
         for fn in program.functions:
-            lines.extend(self._emit_function(fn))
-            lines.append("")
+            body_lines.extend(self._emit_function(fn))
+            body_lines.append("")
 
         # Emit main function
-        lines.append("func main() {")
+        main_lines: List[str] = ["func main() {"]
         for stmt in program.global_statements:
-            lines.extend(self._emit_statement(stmt, indent_level=1))
-        lines.append("}")
+            main_lines.extend(self._emit_statement(stmt, indent_level=1))
+        main_lines.append("}")
+
+        lines: List[str] = ["package main", ""]
+        if len(self.used_imports) == 1:
+            lines.append(f"import {list(self.used_imports)[0]}")
+        else:
+            lines.append("import (")
+            for imp in sorted(self.used_imports):
+                lines.append(f"{self.indent_str}{imp}")
+            lines.append(")")
+        lines.append("")
+
+        lines.extend(body_lines)
+        lines.extend(main_lines)
 
         return "\n".join(lines).strip() + "\n"
 
@@ -179,7 +205,13 @@ class GoEmitter:
             return f"len({arr_str})"
 
         elif isinstance(expr, FunctionCall):
-            args_str = ", ".join(self._emit_expr(a) for a in expr.args)
+            args_strs = [self._emit_expr(a) for a in expr.args]
+            translated, req_import = LibraryRegistry.resolve_call(expr.name, args_strs, "go", self.module_aliases)
+            if req_import:
+                self.used_imports.add(req_import)
+            if translated:
+                return translated
+            args_str = ", ".join(args_strs)
             return f"{expr.name}({args_str})"
 
         return ""

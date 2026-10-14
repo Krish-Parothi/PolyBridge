@@ -7,7 +7,7 @@ from app.ir.nodes import (
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
         ReturnStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
-        FunctionCall, IRType, TypeKind
+        FunctionCall, IRType, TypeKind, ImportStmt
     )
 
 class JavaScriptParser:
@@ -22,18 +22,30 @@ class JavaScriptParser:
 
         functions: List[FunctionDef] = []
         global_statements: List[Statement] = []
+        imports: List[ImportStmt] = []
 
         for child in root.children:
             if child.type == "function_declaration":
                 fn = self._parse_function(child, code_bytes)
                 if fn:
                     functions.append(fn)
+            elif child.type == "import_statement":
+                imp = self._parse_import(child, code_bytes)
+                if imp:
+                    imports.append(imp)
             else:
                 stmts = self._parse_statement(child, code_bytes)
                 if stmts:
                     global_statements.extend(stmts)
 
-        return Program(functions=functions, global_statements=global_statements)
+        return Program(functions=functions, global_statements=global_statements, imports=imports)
+
+    def _parse_import(self, node: Node, code_bytes: bytes) -> Optional[ImportStmt]:
+        source_n = node.child_by_field_name("source")
+        if source_n:
+            mod_text = self._get_text(source_n, code_bytes).strip("'\"")
+            return ImportStmt(module=mod_text)
+        return None
 
     def _get_text(self, node: Node, code_bytes: bytes) -> str:
         return code_bytes[node.start_byte:node.end_byte].decode("utf-8")

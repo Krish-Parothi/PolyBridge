@@ -13,6 +13,7 @@ from app.emitters.python_emitter import PythonEmitter
 from app.emitters.js_emitter import JavaScriptEmitter
 from app.emitters.java_emitter import JavaEmitter
 from app.emitters.go_emitter import GoEmitter
+from app.emitters.cpp_emitter import CppEmitter
 
 from app.ir.type_infer import TypeInferrer
 from app.validator import ScopeValidator
@@ -46,7 +47,8 @@ EMITTERS = {
     "python": PythonEmitter(),
     "javascript": JavaScriptEmitter(),
     "java": JavaEmitter(),
-    "go": GoEmitter()
+    "go": GoEmitter(),
+    "cpp": CppEmitter()
 }
 
 # Request / Response Models
@@ -54,7 +56,7 @@ EMITTERS = {
 class TranspileRequest(BaseModel):
     source_code: str
     source_lang: str = Field(..., description="python | javascript | java | go")
-    target_lang: str = Field(..., description="python | javascript | java | go")
+    target_lang: str = Field(..., description="python | javascript | java | go | cpp")
 
 class TranspileResponse(BaseModel):
     success: bool

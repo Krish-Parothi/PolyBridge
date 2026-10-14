@@ -1,6 +1,7 @@
 from typing import List, Optional, Any
 from dataclasses import dataclass
 from app.ir.nodes import Program, FunctionDef, FunctionCall, Statement, Expression
+from app.libraries.registry import LibraryRegistry
 
 
 @dataclass
@@ -55,57 +56,65 @@ class ScopeValidator:
         # Check for disallowed keywords based on language
         for idx, line in enumerate(lines, start=1):
             stripped = line.strip()
-            # Disallow classes
-            if stripped.startswith("class ") or " class " in stripped:
-                diagnostics.append(Diagnostic(
-                    line=idx,
-                    column=line.find("class") + 1,
-                    severity="error",
-                    message="Scope violation: Classes and Object-Oriented features are not supported in procedural PolyBridge v1."
-                ))
 
-            # Disallow external imports
+            # Class check:
+            # - In Java, top-level wrapper class (e.g. 'public class Solution' or 'class Main') is required syntax, so allow it.
+            # - Flag inheritance (extends / implements) or multiple/inner classes.
+            # - In Python/JS, flag custom OOP inheritance/instantiations, but permit top-level container 'class Solution' if needed.
+            if stripped.startswith("class ") or " class " in stripped:
+                if language == "java":
+                    if " extends " in stripped or " implements " in stripped:
+                        diagnostics.append(Diagnostic(
+                            line=idx,
+                            column=line.find("class") + 1,
+                            severity="error",
+                            message="Scope violation: Class inheritance (extends / implements) is not supported in PolyBridge."
+                        ))
+                    # Allow standard top-level wrapper class for Java
+                else:
+                    is_solution_wrapper = stripped.startswith("class Solution:") or stripped.startswith("class Solution {") or stripped.startswith("class Solution(")
+                    if not is_solution_wrapper:
+                        diagnostics.append(Diagnostic(
+                            line=idx,
+                            column=line.find("class") + 1,
+                            severity="error",
+                            message="Scope violation: Classes and Object-Oriented features are not supported in procedural PolyBridge."
+                        ))
+
+            # Validate library imports
             if language == "python":
                 if stripped.startswith("import ") or stripped.startswith("from "):
-                    diagnostics.append(Diagnostic(
-                        line=idx,
-                        column=1,
-                        severity="error",
-                        message="Scope violation: External library imports are disallowed in PolyBridge v1."
-                    ))
+                    tokens = stripped.split()
+                    mod = tokens[1] if len(tokens) > 1 else ""
+                    if not LibraryRegistry.is_supported_module(mod):
+                        diagnostics.append(Diagnostic(
+                            line=idx,
+                            column=1,
+                            severity="error",
+                            message=f"Scope violation: Unsupported library '{mod}'. PolyBridge supports standard libraries (math) and packages (pandas)."
+                        ))
             elif language == "javascript":
                 if stripped.startswith("import ") or "require(" in stripped:
-                    diagnostics.append(Diagnostic(
-                        line=idx,
-                        column=1,
-                        severity="error",
-                        message="Scope violation: External module imports/require are disallowed in PolyBridge v1."
-                    ))
+                    # Allow standard and supported modules
+                    pass
             elif language == "java":
-                if stripped.startswith("import ") and not stripped.startswith("import java.util.Arrays"):
-                    diagnostics.append(Diagnostic(
-                        line=idx,
-                        column=1,
-                        severity="error",
-                        message="Scope violation: External package imports are disallowed in PolyBridge v1."
-                    ))
+                if stripped.startswith("import "):
+                    tokens = stripped.replace(";", "").split()
+                    mod = tokens[1] if len(tokens) > 1 else ""
+                    if not LibraryRegistry.is_supported_module(mod):
+                        diagnostics.append(Diagnostic(
+                            line=idx,
+                            column=1,
+                            severity="error",
+                            message=f"Scope violation: Unsupported Java import '{mod}'."
+                        ))
 
         return diagnostics
 
     @classmethod
     def validate_ir(cls, program: Program) -> List[Diagnostic]:
         diagnostics: List[Diagnostic] = []
-
-        # Check for recursion (v1 limitation)
-        for fn in program.functions:
-            if cls._has_recursive_call(fn.body, fn.name):
-                diagnostics.append(Diagnostic(
-                    line=1,
-                    column=1,
-                    severity="error",
-                    message=f"Scope violation: Recursive function call detected in '{fn.name}()'. PolyBridge v1 supports iterative procedural algorithms only."
-                ))
-
+        # PolyBridge supports recursion across all targets
         return diagnostics
 
     @classmethod

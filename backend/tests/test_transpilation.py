@@ -90,3 +90,35 @@ def test_java_to_go():
     assert "package main" in go_out
     assert "func multiply(a int, b int) int" in go_out
     assert "fmt.Println(m)" in go_out
+
+def test_recursive_transpilation():
+    code = """def factorial(n):
+    if n <= 1:
+        return 1
+    return n * factorial(n - 1)
+
+print(factorial(5))
+"""
+    java_out = transpile(code, "python", "java")
+    assert "public static int factorial(int n)" in java_out
+    assert "factorial((n - 1))" in java_out
+
+    js_out = transpile(code, "python", "javascript")
+    assert "function factorial(n)" in js_out
+
+    go_out = transpile(code, "python", "go")
+    assert "func factorial(n int) int" in go_out
+
+def test_python_class_wrapper_unwrap():
+    code = """class Solution:
+    def add(self, a, b):
+        return a + b
+
+sol = Solution()
+ans = sol.add(10, 20)
+print(ans)
+"""
+    js_out = transpile(code, "python", "javascript")
+    assert "function add(a, b)" in js_out
+    assert "console.log(ans)" in js_out
+

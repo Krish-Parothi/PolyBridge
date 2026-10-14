@@ -181,6 +181,42 @@ export const App: React.FC = () => {
     }
   };
 
+  // Auto-Fix / Unwrap Class to Procedural Code
+  const handleAutoFixProcedural = () => {
+    const lines = sourceCode.split('\n');
+    const newLines: string[] = [];
+    let insideClass = false;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (
+        trimmed.startsWith('class ') ||
+        trimmed.startsWith('public class ') ||
+        trimmed.startsWith('export class ')
+      ) {
+        insideClass = true;
+        continue;
+      }
+      if (insideClass) {
+        let cleaned = line;
+        if (cleaned.startsWith('    ')) {
+          cleaned = cleaned.substring(4);
+        } else if (cleaned.startsWith('\t')) {
+          cleaned = cleaned.substring(1);
+        }
+        cleaned = cleaned.replace(/def\s+([a-zA-Z0-9_]+)\(self,\s*/, 'def $1(');
+        cleaned = cleaned.replace(/def\s+([a-zA-Z0-9_]+)\(self\)/, 'def $1()');
+        cleaned = cleaned.replace(/self\./g, '');
+        newLines.push(cleaned);
+      } else {
+        newLines.push(line);
+      }
+    }
+
+    setSourceCode(newLines.join('\n'));
+    setDiagnostics([]);
+  };
+
   // Load Preset
   const handleSelectExample = (exId: string) => {
     const ex = examples.find((e) => e.id === exId);
@@ -206,6 +242,7 @@ export const App: React.FC = () => {
     if (lang === 'javascript') return 'javascript';
     if (lang === 'java') return 'java';
     if (lang === 'go') return 'go';
+    if (lang === 'cpp') return 'cpp';
     return 'plaintext';
   };
 
@@ -508,6 +545,7 @@ export const App: React.FC = () => {
                 <option value="javascript">JavaScript (ES6)</option>
                 <option value="java">Java 17</option>
                 <option value="go">Go 1.21</option>
+                <option value="cpp">C++ 20</option>
               </select>
             </div>
 
@@ -635,6 +673,7 @@ export const App: React.FC = () => {
             diagnostics={diagnostics}
             sourceLang={sourceLang}
             targetLang={targetLang}
+            onAutoFixProcedural={handleAutoFixProcedural}
           />
         </div>
       </div>

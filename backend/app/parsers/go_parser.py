@@ -7,7 +7,7 @@ from app.ir.nodes import (
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
         ReturnStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
-        FunctionCall, IRType, TypeKind
+        FunctionCall, IRType, TypeKind, ImportStmt
     )
 
 class GoParser:
@@ -22,6 +22,7 @@ class GoParser:
 
         functions: List[FunctionDef] = []
         global_statements: List[Statement] = []
+        imports: List[ImportStmt] = []
 
         for child in root.children:
             if child.type == "function_declaration":
@@ -44,8 +45,32 @@ class GoParser:
                     fn = self._parse_function(child, code_bytes)
                     if fn:
                         functions.append(fn)
+            elif child.type == "import_declaration":
+                imports.extend(self._parse_import(child, code_bytes))
 
-        return Program(functions=functions, global_statements=global_statements)
+        return Program(functions=functions, global_statements=global_statements, imports=imports)
+
+    def _parse_import(self, node: Node, code_bytes: bytes) -> List[ImportStmt]:
+        stmts = []
+        for c in node.children:
+            if c.type == "interpreted_string_literal":
+                txt = self._get_text(c, code_bytes).strip('"')
+                stmts.append(ImportStmt(module=txt))
+            elif c.type == "import_spec":
+                path_node = c.child_by_field_name("path") or c.children[-1]
+                txt = self._get_text(path_node, code_bytes).strip('"')
+                alias_node = c.child_by_field_name("name")
+                alias = self._get_text(alias_node, code_bytes) if alias_node else None
+                stmts.append(ImportStmt(module=txt, alias=alias))
+            elif c.type == "import_spec_list":
+                for spec in c.children:
+                    if spec.type == "import_spec":
+                        path_node = spec.child_by_field_name("path") or spec.children[-1]
+                        txt = self._get_text(path_node, code_bytes).strip('"')
+                        alias_node = spec.child_by_field_name("name")
+                        alias = self._get_text(alias_node, code_bytes) if alias_node else None
+                        stmts.append(ImportStmt(module=txt, alias=alias))
+        return stmts
 
     def _get_text(self, node: Node, code_bytes: bytes) -> str:
         return code_bytes[node.start_byte:node.end_byte].decode("utf-8")

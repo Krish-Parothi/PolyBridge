@@ -7,7 +7,7 @@ from app.ir.nodes import (
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
         ReturnStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
-        FunctionCall, IRType, TypeKind
+        FunctionCall, IRType, TypeKind, ImportStmt
     )
 
 class JavaParser:
@@ -22,25 +22,31 @@ class JavaParser:
 
         functions: List[FunctionDef] = []
         global_statements: List[Statement] = []
+        imports: List[ImportStmt] = []
 
-        # Find the class declaration
+        # Find the class declaration and import declarations
         class_node = None
         for child in root.children:
             if child.type == "class_declaration":
                 class_node = child
-                break
+            elif child.type == "import_declaration":
+                imp = self._parse_import(child, code_bytes)
+                if imp:
+                    imports.append(imp)
 
         if not class_node:
             # Fallback if bare statements
             for child in root.children:
+                if child.type == "import_declaration":
+                    continue
                 stmts = self._parse_statement(child, code_bytes)
                 if stmts:
                     global_statements.extend(stmts)
-            return Program(functions=functions, global_statements=global_statements)
+            return Program(functions=functions, global_statements=global_statements, imports=imports)
 
         class_body = class_node.child_by_field_name("body")
         if not class_body:
-            return Program()
+            return Program(imports=imports)
 
         for child in class_body.children:
             if child.type == "method_declaration":
@@ -60,7 +66,13 @@ class JavaParser:
                     if fn:
                         functions.append(fn)
 
-        return Program(functions=functions, global_statements=global_statements)
+        return Program(functions=functions, global_statements=global_statements, imports=imports)
+
+    def _parse_import(self, node: Node, code_bytes: bytes) -> Optional[ImportStmt]:
+        for c in node.children:
+            if c.type in ["scoped_identifier", "identifier"]:
+                return ImportStmt(module=self._get_text(c, code_bytes))
+        return None
 
     def _get_text(self, node: Node, code_bytes: bytes) -> str:
         return code_bytes[node.start_byte:node.end_byte].decode("utf-8")

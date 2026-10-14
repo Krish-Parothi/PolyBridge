@@ -1,4 +1,4 @@
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Dict
 from app.ir.nodes import (
         Program, FunctionDef, Parameter, Statement, Expression,
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
@@ -6,6 +6,7 @@ from app.ir.nodes import (
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
         FunctionCall, IRType, TypeKind
     )
+from app.libraries.registry import LibraryRegistry
 
 class JavaEmitter:
     """Emits Java 17 code with class Solution and public static void main boilerplate."""
@@ -16,33 +17,48 @@ class JavaEmitter:
         self.declared_vars: Set[str] = set()
         self.var_types: dict[str, str] = {}
         self.uses_arrays = False
+        self.used_imports: Set[str] = set()
+        self.module_aliases: Dict[str, str] = {}
 
     def emit(self, program: Program) -> str:
         self.declared_vars.clear()
         self.var_types.clear()
         self.uses_arrays = False
+        self.used_imports.clear()
+        self.module_aliases.clear()
+
+        # Collect imported aliases and map module imports
+        for imp in getattr(program, "imports", []):
+            if imp.alias:
+                self.module_aliases[imp.alias] = imp.module
+            for ti in LibraryRegistry.get_target_imports({imp.module}, "java"):
+                self.used_imports.add(ti)
 
         # Pre-scan for arrays
         self._detect_array_usage(program)
+        if self.uses_arrays:
+            self.used_imports.add("import java.util.Arrays;")
+
+        # Pre-emit methods to capture required imports from calls
+        body_lines: List[str] = []
+        for fn in program.functions:
+            body_lines.extend(self._emit_function(fn))
+            body_lines.append("")
+
+        main_lines: List[str] = [f"{self._indent(1)}public static void main(String[] args) {{"]
+        for stmt in program.global_statements:
+            main_lines.extend(self._emit_statement(stmt, indent_level=2))
+        main_lines.append(f"{self._indent(1)}}}")
 
         class_lines: List[str] = []
-        if self.uses_arrays:
-            class_lines.append("import java.util.Arrays;")
+        for imp_stmt in sorted(self.used_imports):
+            class_lines.append(imp_stmt)
+        if self.used_imports:
             class_lines.append("")
 
         class_lines.append(f"public class {self.class_name} {{")
-
-        # Emit static methods
-        for fn in program.functions:
-            class_lines.extend(self._emit_function(fn))
-            class_lines.append("")
-
-        # Emit main method
-        class_lines.append(f"{self._indent(1)}public static void main(String[] args) {{")
-        for stmt in program.global_statements:
-            class_lines.extend(self._emit_statement(stmt, indent_level=2))
-        class_lines.append(f"{self._indent(1)}}}")
-
+        class_lines.extend(body_lines)
+        class_lines.extend(main_lines)
         class_lines.append("}")
         return "\n".join(class_lines).strip() + "\n"
 
@@ -125,10 +141,14 @@ class JavaEmitter:
             target = self._emit_expr(stmt.target)
             if isinstance(stmt.target, Identifier) and stmt.target.name not in self.declared_vars:
                 # First time assignment -> declare variable
-                jtype = self._to_java_type(stmt.target.inferred_type)
+                val = self._emit_expr(stmt.value)
+                if stmt.target.inferred_type.kind == TypeKind.UNKNOWN:
+                    # In Java 17, use 'var' for local variables when exact type is complex/unknown
+                    jtype = "var"
+                else:
+                    jtype = self._to_java_type(stmt.target.inferred_type)
                 self.declared_vars.add(stmt.target.name)
                 self.var_types[stmt.target.name] = jtype
-                val = self._emit_expr(stmt.value, expected_type=jtype)
                 return [f"{ind}{jtype} {target} = {val};"]
 
             expected = self.var_types.get(target, "int")
@@ -237,7 +257,13 @@ class JavaEmitter:
             return f"{arr_str}.length"
 
         elif isinstance(expr, FunctionCall):
-            args_str = ", ".join(self._emit_expr(a) for a in expr.args)
+            args_strs = [self._emit_expr(a) for a in expr.args]
+            translated, req_import = LibraryRegistry.resolve_call(expr.name, args_strs, "java", self.module_aliases)
+            if req_import:
+                self.used_imports.add(req_import)
+            if translated:
+                return translated
+            args_str = ", ".join(args_strs)
             return f"{expr.name}({args_str})"
 
         return ""
