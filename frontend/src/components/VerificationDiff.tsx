@@ -1,5 +1,12 @@
 import React from 'react';
-import { CheckCircle2, XCircle, Clock, AlertTriangle, Terminal } from 'lucide-react';
+import {
+  CheckCircle2,
+  XCircle,
+  Clock,
+  AlertTriangle,
+  Terminal,
+  Wrench,
+} from 'lucide-react';
 
 export interface VerificationResult {
   match: boolean;
@@ -41,19 +48,38 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
 }) => {
   if (isLoading) {
     return (
-      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, color: '#94a3b8' }}>
-        <div style={{
-          width: 20,
-          height: 20,
-          border: '2px solid rgba(99, 102, 241, 0.3)',
-          borderTopColor: '#6366f1',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite'
-        }} />
+      <div
+        style={{
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 10,
+          color: 'var(--text-secondary)',
+          background: 'var(--bg-surface)',
+        }}
+      >
+        <div
+          style={{
+            width: 22,
+            height: 22,
+            border: '2px solid var(--border-default)',
+            borderTopColor: 'var(--accent)',
+            borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite',
+          }}
+        />
         <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
-        <span style={{ fontSize: 13, fontFamily: "'Inter', sans-serif" }}>
-          Executing both programs in isolated sandbox & comparing outputs...
-        </span>
+        <div
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 12,
+            color: 'var(--text-secondary)',
+          }}
+        >
+          Spawning sandboxed runtimes ({sourceLang} &amp; {targetLang}) and comparing normalized stdout...
+        </div>
       </div>
     );
   }
@@ -64,50 +90,70 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
 
   if (errors.length > 0) {
     return (
-      <div style={{ padding: '12px 18px', overflowY: 'auto', height: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div
+        style={{
+          padding: '12px 16px',
+          overflowY: 'auto',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          background: 'var(--bg-surface)',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f43f5e' }}>
-            <AlertTriangle size={18} />
-            <strong style={{ fontSize: 13 }}>Diagnostic Scope Violations Detected</strong>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--color-error)' }}>
+            <AlertTriangle size={15} />
+            <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-sans)' }}>
+              Compiler Scope Diagnostics ({errors.length} error{errors.length > 1 ? 's' : ''})
+            </span>
           </div>
           {hasClassError && onAutoFixProcedural && (
             <button
               onClick={onAutoFixProcedural}
               style={{
-                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 4,
-                padding: '4px 12px',
+                background: 'var(--bg-subtle)',
+                color: 'var(--accent-text)',
+                border: '1px solid var(--accent-border)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '4px 10px',
                 fontSize: 11,
+                fontFamily: 'var(--font-mono)',
                 fontWeight: 600,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
-                boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)',
+                transition: 'background 0.15s ease',
               }}
             >
-              ✨ Auto-Convert to Procedural
+              <Wrench size={12} />
+              Unwrap to Procedural
             </button>
           )}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {errors.map((err, i) => (
             <div
               key={i}
               style={{
-                padding: '8px 12px',
-                borderRadius: 6,
-                background: 'rgba(244, 63, 94, 0.08)',
-                border: '1px solid rgba(244, 63, 94, 0.25)',
-                fontSize: 12,
-                color: '#fecdd3',
-                fontFamily: "'Fira Code', monospace",
+                padding: '6px 10px',
+                borderRadius: 'var(--radius-xs)',
+                background: 'var(--color-error-bg)',
+                border: '1px solid var(--color-error-border)',
+                fontSize: 11.5,
+                color: 'var(--color-error)',
+                fontFamily: 'var(--font-mono)',
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: 8,
               }}
             >
-              [Line {err.line}:{err.column}] {err.message}
+              <span style={{ fontWeight: 600, opacity: 0.85, whiteSpace: 'nowrap' }}>
+                [{err.line}:{err.column}]
+              </span>
+              <span>{err.message}</span>
             </div>
           ))}
         </div>
@@ -115,16 +161,16 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
         {hasClassError && (
           <div
             style={{
-              padding: '10px 14px',
-              borderRadius: 6,
-              background: 'rgba(56, 189, 248, 0.06)',
-              border: '1px solid rgba(56, 189, 248, 0.2)',
-              fontSize: 12,
-              color: '#93c5fd',
+              padding: '8px 12px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--bg-subtle)',
+              border: '1px solid var(--border-default)',
+              fontSize: 11.5,
+              color: 'var(--text-secondary)',
               lineHeight: 1.5,
             }}
           >
-            <strong>💡 Compiler Scope Rule:</strong> PolyBridge focuses on educational, transparent procedural algorithms (loops, functions, arrays, math). Standard Java classes (`public class Solution`) and LeetCode wrappers (`class Solution:`) are supported, but complex inheritance or custom OOP classes are excluded by specification design.
+            <strong>Scope Constraint:</strong> PolyBridge focuses on educational, transparent procedural algorithms (loops, functions, arrays, math). Standard LeetCode wrapper classes are unwrapped into procedural functions by default.
           </div>
         )}
       </div>
@@ -133,194 +179,293 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
 
   if (!result) {
     return (
-      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 13 }}>
-        <Terminal size={18} style={{ marginRight: 8, opacity: 0.6 }} />
-        Click <strong>"Run & Verify"</strong> to execute source and target code with identical inputs and verify output equivalence.
+      <div
+        style={{
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--text-muted)',
+          fontSize: 12,
+          background: 'var(--bg-surface)',
+          padding: 16,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <Terminal size={15} style={{ opacity: 0.6 }} />
+          <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+            $ polybridge verify --source={sourceLang} --target={targetLang}
+          </span>
+        </div>
+        <p style={{ margin: 0, fontSize: 11, color: 'var(--text-muted)' }}>
+          Click <strong>Run &amp; Verify</strong> to execute source and target ASTs with identical input and test behavioral equivalence.
+        </p>
       </div>
     );
   }
 
-  // Display Missing Runtime Warning
+  // Missing Runtime Warning
   const targetError = result?.target_result?.error;
-  const isTargetRuntimeMissing = targetError === 'Go compiler not found' || result?.target_result?.stderr?.includes('Go compiler');
+  const isTargetRuntimeMissing =
+    targetError === 'Go compiler not found' ||
+    result?.target_result?.stderr?.includes('Go compiler') ||
+    targetError?.includes('compiler not found');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {isTargetRuntimeMissing ? (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '8px 16px',
-            background: 'rgba(245, 158, 11, 0.1)',
-            borderBottom: '1px solid rgba(245, 158, 11, 0.25)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <AlertTriangle size={18} color="#f59e0b" />
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#fbbf24' }}>
-              TRANSPILATION SUCCEEDED — {targetLang.toUpperCase()} RUNTIME NOT INSTALLED
-            </span>
-          </div>
-          <div style={{ fontSize: 11, color: '#94a3b8' }}>
-            Run in terminal: <code style={{ color: '#38bdf8' }}>winget install GoLang.Go</code>
-          </div>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        overflow: 'hidden',
+        background: 'var(--bg-surface)',
+      }}
+    >
+      {/* Verification Status Banner */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '6px 14px',
+          background: isTargetRuntimeMissing
+            ? 'var(--color-warning-bg)'
+            : result.match
+            ? 'var(--color-success-bg)'
+            : 'var(--color-error-bg)',
+          borderBottom: isTargetRuntimeMissing
+            ? '1px solid var(--color-warning-border)'
+            : result.match
+            ? '1px solid var(--color-success-border)'
+            : '1px solid var(--color-error-border)',
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {isTargetRuntimeMissing ? (
+            <>
+              <AlertTriangle size={15} style={{ color: 'var(--color-warning)' }} />
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-sans)',
+                  color: 'var(--color-warning)',
+                }}
+              >
+                COMPILER RUNTIME UNAVAILABLE ({targetLang.toUpperCase()})
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                — Transpilation succeeded, but execution engine requires local runtime installation.
+              </span>
+            </>
+          ) : result.match ? (
+            <>
+              <CheckCircle2 size={15} style={{ color: 'var(--color-success)' }} />
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-sans)',
+                  color: 'var(--color-success)',
+                }}
+              >
+                BEHAVIORAL EQUIVALENCE VERIFIED
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                — Normalized stdout outputs are strictly identical.
+              </span>
+            </>
+          ) : (
+            <>
+              <XCircle size={15} style={{ color: 'var(--color-error)' }} />
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-sans)',
+                  color: 'var(--color-error)',
+                }}
+              >
+                BEHAVIORAL DIVERGENCE DETECTED
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                — Discrepancy observed between runtime outputs. Inspect unified diff below.
+              </span>
+            </>
+          )}
         </div>
-      ) : (
-        /* Status Bar */
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '8px 16px',
-            background: result?.match ? 'rgba(16, 185, 129, 0.1)' : 'rgba(244, 63, 94, 0.1)',
-            borderBottom: result?.match ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(244, 63, 94, 0.25)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {result?.match ? (
-              <>
-                <CheckCircle2 size={18} color="#10b981" />
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#34d399' }}>
-                  BEHAVIORAL EQUIVALENCE VERIFIED (STDOUT MATCH)
-                </span>
-              </>
-            ) : (
-              <>
-                <XCircle size={18} color="#f43f5e" />
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#fb7185' }}>
-                  OUTPUT MISMATCH DETECTED
-                </span>
-              </>
-            )}
-          </div>
 
-          <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#94a3b8' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Clock size={12} /> {sourceLang}: {result?.source_result.duration_ms} ms
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Clock size={12} /> {targetLang}: {result?.target_result.duration_ms} ms
-            </span>
-          </div>
+        {/* Runtime Performance Metrics */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            fontSize: 11,
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Clock size={11} /> {sourceLang}: {result?.source_result.duration_ms} ms
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Clock size={11} /> {targetLang}: {result?.target_result.duration_ms} ms
+          </span>
         </div>
-      )}
+      </div>
 
       {/* Side-by-side terminal outputs */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-        {/* Source Output */}
+        {/* Source Output Pane */}
         <div
           style={{
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
-            borderRight: '1px solid rgba(255, 255, 255, 0.08)',
-            background: '#090d15',
+            borderRight: '1px solid var(--border-default)',
+            background: 'var(--term-bg)',
           }}
         >
           <div
             style={{
               padding: '4px 12px',
-              fontSize: 11,
+              fontSize: 10.5,
               fontWeight: 600,
-              background: '#0e1422',
-              color: '#38bdf8',
+              fontFamily: 'var(--font-mono)',
+              background: 'var(--term-header-bg)',
+              color: 'var(--term-text-muted)',
               display: 'flex',
               justifyContent: 'space-between',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+              alignItems: 'center',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
             }}
           >
-            <span>{sourceLang.toUpperCase()} OUTPUT (STDOUT)</span>
-            <span style={{ color: result.source_result.exit_code === 0 ? '#10b981' : '#f43f5e' }}>
-              exit: {result.source_result.exit_code}
+            <span>{sourceLang.toUpperCase()} STDOUT</span>
+            <span
+              style={{
+                color:
+                  result.source_result.exit_code === 0 ? 'var(--color-success)' : 'var(--color-error)',
+              }}
+            >
+              exit {result.source_result.exit_code}
             </span>
           </div>
           <pre
             style={{
               flex: 1,
-              padding: '10px 14px',
+              padding: '8px 12px',
               margin: 0,
-              fontSize: 12,
-              fontFamily: "'Fira Code', monospace",
-              color: result.source_result.stderr ? '#fca5a5' : '#e2e8f0',
+              fontSize: 11.5,
+              fontFamily: 'var(--font-mono)',
+              color: result.source_result.stderr ? '#fca5a5' : 'var(--term-text)',
               overflowY: 'auto',
               whiteSpace: 'pre-wrap',
+              lineHeight: 1.45,
             }}
           >
-            {result.source_result.stdout || result.source_result.stderr || '(No standard output)'}
+            {result.source_result.stdout || result.source_result.stderr || '(No output produced)'}
           </pre>
         </div>
 
-        {/* Target Output */}
+        {/* Target Output Pane */}
         <div
           style={{
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
-            background: '#090d15',
+            background: 'var(--term-bg)',
           }}
         >
           <div
             style={{
               padding: '4px 12px',
-              fontSize: 11,
+              fontSize: 10.5,
               fontWeight: 600,
-              background: '#0e1422',
-              color: '#a855f7',
+              fontFamily: 'var(--font-mono)',
+              background: 'var(--term-header-bg)',
+              color: 'var(--term-text-muted)',
               display: 'flex',
               justifyContent: 'space-between',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+              alignItems: 'center',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
             }}
           >
-            <span>{targetLang.toUpperCase()} OUTPUT (STDOUT)</span>
-            <span style={{ color: result.target_result.exit_code === 0 ? '#10b981' : '#f43f5e' }}>
-              exit: {result.target_result.exit_code}
+            <span>{targetLang.toUpperCase()} STDOUT</span>
+            <span
+              style={{
+                color:
+                  result.target_result.exit_code === 0 ? 'var(--color-success)' : 'var(--color-error)',
+              }}
+            >
+              exit {result.target_result.exit_code}
             </span>
           </div>
           <pre
             style={{
               flex: 1,
-              padding: '10px 14px',
+              padding: '8px 12px',
               margin: 0,
-              fontSize: 12,
-              fontFamily: "'Fira Code', monospace",
-              color: result.target_result.stderr ? '#fca5a5' : '#e2e8f0',
+              fontSize: 11.5,
+              fontFamily: 'var(--font-mono)',
+              color: result.target_result.stderr ? '#fca5a5' : 'var(--term-text)',
               overflowY: 'auto',
               whiteSpace: 'pre-wrap',
+              lineHeight: 1.45,
             }}
           >
-            {result.target_result.stdout || result.target_result.stderr || '(No standard output)'}
+            {result.target_result.stdout || result.target_result.stderr || '(No output produced)'}
           </pre>
         </div>
       </div>
 
-      {/* Diff View if mismatch */}
+      {/* Unified Output Diff on Mismatch */}
       {!result.match && result.diff.length > 0 && (
         <div
           style={{
-            maxHeight: 120,
+            maxHeight: 110,
             overflowY: 'auto',
-            background: '#160b11',
-            borderTop: '1px solid rgba(244, 63, 94, 0.3)',
+            background: 'var(--bg-subtle)',
+            borderTop: '1px solid var(--color-error-border)',
             padding: '6px 12px',
+            flexShrink: 0,
           }}
         >
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#fb7185', marginBottom: 4 }}>
-            UNIFIED OUTPUT DIFF:
+          <div
+            style={{
+              fontSize: 10.5,
+              fontWeight: 600,
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--color-error)',
+              marginBottom: 4,
+            }}
+          >
+            Unified Output Diff:
           </div>
           {result.diff.map((line, idx) => {
-            let color = '#94a3b8';
-            if (line.startsWith('+')) color = '#34d399';
-            if (line.startsWith('-')) color = '#fb7185';
+            const isAdd = line.startsWith('+');
+            const isSub = line.startsWith('-');
             return (
               <div
                 key={idx}
                 style={{
-                  fontFamily: "'Fira Code', monospace",
+                  fontFamily: 'var(--font-mono)',
                   fontSize: 11,
-                  color,
+                  lineHeight: 1.4,
+                  color: isAdd
+                    ? 'var(--color-success)'
+                    : isSub
+                    ? 'var(--color-error)'
+                    : 'var(--text-secondary)',
+                  background: isAdd
+                    ? 'rgba(26, 127, 55, 0.08)'
+                    : isSub
+                    ? 'rgba(207, 34, 46, 0.08)'
+                    : 'transparent',
+                  padding: '1px 4px',
+                  borderRadius: 2,
                 }}
               >
                 {line}

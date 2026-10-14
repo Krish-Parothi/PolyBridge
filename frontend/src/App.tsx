@@ -1,17 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import {
   Code2,
   Play,
-  Zap,
   ArrowRightLeft,
   Copy,
   Check,
-  Sparkles,
   Layers,
   Terminal,
-  Cpu,
   AlertTriangle,
+  Sun,
+  Moon,
+  ChevronDown,
+  ChevronUp,
+  RotateCcw,
 } from 'lucide-react';
 import { IRTreeViewer } from './components/IRTreeViewer';
 import type { TreeNode } from './components/IRTreeViewer';
@@ -45,6 +47,10 @@ print(res)
 `;
 
 export const App: React.FC = () => {
+  // Theme state: light by default
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+
+  // Compiler state
   const [sourceLang, setSourceLang] = useState<string>('python');
   const [targetLang, setTargetLang] = useState<string>('java');
   const [sourceCode, setSourceCode] = useState<string>(DEFAULT_PYTHON_CODE);
@@ -53,23 +59,44 @@ export const App: React.FC = () => {
 
   const [isTranspiling, setIsTranspiling] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [diagnostics, setDiagnostics] = useState<Array<{ line: number; column: number; severity: string; message: string }>>([]);
+  const [diagnostics, setDiagnostics] = useState<
+    Array<{ line: number; column: number; severity: string; message: string }>
+  >([]);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
 
   const [examples, setExamples] = useState<PresetExample[]>([]);
+  const [selectedExampleId, setSelectedExampleId] = useState<string>('');
   const [copiedTarget, setCopiedTarget] = useState(false);
   const [activeBottomTab, setActiveBottomTab] = useState<'verification' | 'diagnostics'>('verification');
+  const [isConsoleOpen, setIsConsoleOpen] = useState(true);
+  const [isBackendOnline, setIsBackendOnline] = useState<boolean | null>(null);
 
-  // Load preset examples from backend
+  // Synchronize theme with HTML document attribute
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  // Load preset examples and check health
   useEffect(() => {
     fetch(`${API_BASE}/api/examples`)
       .then((res) => res.json())
-      .then((data) => setExamples(data))
-      .catch((err) => console.warn('Could not load preset examples:', err));
+      .then((data) => {
+        setExamples(data);
+        setIsBackendOnline(true);
+      })
+      .catch((err) => {
+        console.warn('Could not load preset examples:', err);
+        setIsBackendOnline(false);
+      });
+
+    fetch(`${API_BASE}/api/health`)
+      .then((res) => res.json())
+      .then(() => setIsBackendOnline(true))
+      .catch(() => setIsBackendOnline(false));
   }, []);
 
   // Handle Transpile action
-  const handleTranspile = async () => {
+  const handleTranspile = useCallback(async () => {
     setIsTranspiling(true);
     setDiagnostics([]);
     setVerificationResult(null);
@@ -92,24 +119,27 @@ export const App: React.FC = () => {
         setDiagnostics(data.diagnostics || []);
       } else {
         setTargetCode('');
-        setDiagnostics(data.diagnostics || [
-          { line: 1, column: 1, severity: 'error', message: data.error || 'Transpilation failed' },
-        ]);
+        setDiagnostics(
+          data.diagnostics || [
+            { line: 1, column: 1, severity: 'error', message: data.error || 'Transpilation failed' },
+          ]
+        );
         setActiveBottomTab('diagnostics');
+        setIsConsoleOpen(true);
       }
     } catch (err: any) {
       setDiagnostics([
         { line: 1, column: 1, severity: 'error', message: `Backend connection error: ${err.message}` },
       ]);
       setActiveBottomTab('diagnostics');
+      setIsConsoleOpen(true);
     } finally {
       setIsTranspiling(false);
     }
-  };
+  }, [sourceCode, sourceLang, targetLang]);
 
   // Handle Run & Verify Equivalence
-  const handleVerify = async () => {
-    // If target code is empty, transpile first
+  const handleVerify = useCallback(async () => {
     let currentTarget = targetCode;
     if (!currentTarget) {
       setIsTranspiling(true);
@@ -129,13 +159,17 @@ export const App: React.FC = () => {
           setTargetCode(data.target_code);
           setIrTree(data.ir_tree);
         } else {
-          setDiagnostics(data.diagnostics || [
-            { line: 1, column: 1, severity: 'error', message: data.error || 'Transpilation failed' },
-          ]);
+          setDiagnostics(
+            data.diagnostics || [
+              { line: 1, column: 1, severity: 'error', message: data.error || 'Transpilation failed' },
+            ]
+          );
           setIsTranspiling(false);
+          setActiveBottomTab('diagnostics');
+          setIsConsoleOpen(true);
           return;
         }
-      } catch (e: any) {
+      } catch {
         setIsTranspiling(false);
         return;
       }
@@ -143,6 +177,7 @@ export const App: React.FC = () => {
     }
 
     setIsVerifying(true);
+    setIsConsoleOpen(true);
     try {
       const res = await fetch(`${API_BASE}/api/verify`, {
         method: 'POST',
@@ -163,10 +198,27 @@ export const App: React.FC = () => {
       setDiagnostics([
         { line: 1, column: 1, severity: 'error', message: `Sandbox verification failed: ${err.message}` },
       ]);
+      setActiveBottomTab('diagnostics');
     } finally {
       setIsVerifying(false);
     }
-  };
+  }, [sourceCode, sourceLang, targetCode, targetLang]);
+
+  // Keyboard shortcut listener: Ctrl+Enter (Transpile), Ctrl+Shift+Enter (Verify)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleVerify();
+        } else {
+          handleTranspile();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleTranspile, handleVerify]);
 
   // Swap Languages
   const handleSwap = () => {
@@ -217,8 +269,9 @@ export const App: React.FC = () => {
     setDiagnostics([]);
   };
 
-  // Load Preset
+  // Load Preset Example
   const handleSelectExample = (exId: string) => {
+    setSelectedExampleId(exId);
     const ex = examples.find((e) => e.id === exId);
     if (ex) {
       setSourceCode(ex.code);
@@ -230,13 +283,24 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleResetDefault = () => {
+    setSourceCode(DEFAULT_PYTHON_CODE);
+    setSourceLang('python');
+    setTargetLang('java');
+    setTargetCode('');
+    setIrTree(null);
+    setVerificationResult(null);
+    setDiagnostics([]);
+    setSelectedExampleId('');
+  };
+
   const handleCopyTarget = () => {
+    if (!targetCode) return;
     navigator.clipboard.writeText(targetCode);
     setCopiedTarget(true);
     setTimeout(() => setCopiedTarget(false), 2000);
   };
 
-  // Language display mapping for Monaco
   const getMonacoLang = (lang: string) => {
     if (lang === 'python') return 'python';
     if (lang === 'javascript') return 'javascript';
@@ -247,167 +311,300 @@ export const App: React.FC = () => {
   };
 
   const sourceLineCount = sourceCode.split('\n').length;
+  const monacoTheme = theme === 'dark' ? 'vs-dark' : 'vs';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#07090e', color: '#f8fafc' }}>
-      {/* Top Navbar */}
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        background: 'var(--bg-app)',
+        color: 'var(--text-primary)',
+        fontFamily: 'var(--font-sans)',
+      }}
+    >
+      {/* 1. Header Toolbar */}
       <header
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '10px 20px',
-          background: '#0d111a',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-          zIndex: 20,
+          height: 46,
+          padding: '0 16px',
+          background: 'var(--bg-surface)',
+          borderBottom: '1px solid var(--border-default)',
+          zIndex: 30,
+          flexShrink: 0,
         }}
       >
-        {/* Brand */}
+        {/* Brand / Title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <span
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontWeight: 700,
+                fontSize: 14,
+                letterSpacing: '-0.3px',
+                color: 'var(--text-primary)',
+              }}
+            >
+              PolyBridge
+            </span>
+            <span
+              style={{
+                fontSize: 11,
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text-muted)',
+                padding: '1px 5px',
+                borderRadius: 'var(--radius-xs)',
+                border: '1px solid var(--border-subtle)',
+                background: 'var(--bg-subtle)',
+              }}
+            >
+              v1.0.0
+            </span>
+          </div>
+
           <div
             style={{
-              width: 34,
-              height: 34,
-              borderRadius: 8,
-              background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 0 15px rgba(99, 102, 241, 0.5)',
+              width: 1,
+              height: 16,
+              background: 'var(--border-default)',
+              margin: '0 2px',
+            }}
+          />
+
+          <span
+            style={{
+              fontSize: 11.5,
+              color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-sans)',
             }}
           >
-            <Cpu size={20} color="#fff" />
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <h1 style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.3px', margin: 0, color: '#f8fafc' }}>
-                POLYBRIDGE
-              </h1>
-              <span className="badge badge-info" style={{ fontSize: 10 }}>v1.0 COMPILER</span>
-            </div>
-            <p style={{ fontSize: 11, color: '#64748b', margin: 0 }}>
-              Scoped Multi-Language Transpiler & Behavioral Verification
-            </p>
-          </div>
+            Universal IR Compiler Workbench
+          </span>
         </div>
 
-        {/* Algorithm Presets Dropdown */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8' }}>
-            <Sparkles size={14} color="#f59e0b" />
-            <span>Preset Algorithm:</span>
-          </div>
-          <select
-            onChange={(e) => handleSelectExample(e.target.value)}
-            defaultValue=""
+        {/* Center: Algorithm Presets Selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label
+            htmlFor="preset-select"
             style={{
-              background: '#161e31',
-              color: '#f8fafc',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: 6,
-              padding: '6px 12px',
-              fontSize: 12,
-              fontFamily: "'Inter', sans-serif",
-              cursor: 'pointer',
-              outline: 'none',
+              fontSize: 11.5,
+              fontWeight: 500,
+              color: 'var(--text-secondary)',
             }}
           >
-            <option value="" disabled>Select an Algorithm...</option>
+            Preset:
+          </label>
+          <select
+            id="preset-select"
+            value={selectedExampleId}
+            onChange={(e) => handleSelectExample(e.target.value)}
+            style={{
+              background: 'var(--bg-surface)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '4px 8px',
+              fontSize: 11.5,
+              fontFamily: 'var(--font-sans)',
+              cursor: 'pointer',
+              outline: 'none',
+              minWidth: 200,
+            }}
+          >
+            <option value="">Select Algorithm Benchmark...</option>
             {examples.map((ex) => (
               <option key={ex.id} value={ex.id}>
-                {ex.title} ({ex.category})
+                {ex.title} [{ex.category}] ({ex.language})
               </option>
             ))}
           </select>
+
+          <button
+            onClick={handleResetDefault}
+            title="Reset to default code"
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '4px 7px',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <RotateCcw size={12} />
+          </button>
         </div>
 
-        {/* Action Buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Right Actions: Transpile, Run & Verify, Theme Toggle, Status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Transpile Action */}
           <button
             onClick={handleTranspile}
             disabled={isTranspiling}
+            title="Parse into Intermediate Representation AST (Ctrl+Enter)"
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 6,
-              padding: '7px 16px',
-              fontSize: 12,
+              background: 'var(--bg-surface)',
+              color: 'var(--accent-text)',
+              border: '1px solid var(--accent-border)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '5px 12px',
+              fontSize: 11.5,
               fontWeight: 600,
-              cursor: 'pointer',
-              boxShadow: '0 2px 10px rgba(99, 102, 241, 0.3)',
-              transition: 'all 0.2s',
+              fontFamily: 'var(--font-mono)',
+              cursor: isTranspiling ? 'not-allowed' : 'pointer',
+              opacity: isTranspiling ? 0.7 : 1,
+              transition: 'all 0.15s ease',
             }}
           >
-            <Zap size={14} />
+            <Layers size={13} />
             {isTranspiling ? 'Transpiling...' : 'Transpile (IR)'}
           </button>
 
+          {/* Run & Verify Action (Primary) */}
           <button
             onClick={handleVerify}
             disabled={isVerifying}
+            title="Execute source and target in sandbox to verify behavioral equivalence (Ctrl+Shift+Enter)"
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 6,
-              padding: '7px 16px',
-              fontSize: 12,
+              background: 'var(--accent)',
+              color: '#ffffff',
+              border: '1px solid var(--accent)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '5px 14px',
+              fontSize: 11.5,
               fontWeight: 600,
-              cursor: 'pointer',
-              boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)',
-              transition: 'all 0.2s',
+              fontFamily: 'var(--font-sans)',
+              cursor: isVerifying ? 'not-allowed' : 'pointer',
+              opacity: isVerifying ? 0.8 : 1,
+              boxShadow: 'var(--shadow-sm)',
+              transition: 'background 0.15s ease',
             }}
           >
-            <Play size={14} />
-            {isVerifying ? 'Verifying Sandbox...' : 'Run & Verify'}
+            <Play size={12} fill="#ffffff" />
+            {isVerifying ? 'Verifying...' : 'Run & Verify'}
           </button>
+
+          <div
+            style={{
+              width: 1,
+              height: 16,
+              background: 'var(--border-default)',
+              margin: '0 2px',
+            }}
+          />
+
+          {/* Theme Toggle */}
+          <button
+            onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+            title={`Switch to ${theme === 'light' ? 'Dark IDE' : 'Light Workbench'} Theme`}
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '4px 7px',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            {theme === 'light' ? <Moon size={13} /> : <Sun size={13} />}
+          </button>
+
+          {/* Backend Status indicator */}
+          <div
+            title={`Backend Service: ${isBackendOnline ? 'Online (Port 8000)' : 'Offline'}`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '3px 7px',
+              borderRadius: 'var(--radius-xs)',
+              background: 'var(--bg-subtle)',
+              border: '1px solid var(--border-default)',
+              fontSize: 10.5,
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: isBackendOnline ? 'var(--color-success)' : 'var(--color-error)',
+                display: 'inline-block',
+              }}
+            />
+            {isBackendOnline ? '8000' : 'Offline'}
+          </div>
         </div>
       </header>
 
-      {/* Main Workspace: 3-Panel Split View */}
+      {/* 2. Main 3-Panel Compiler Workspace */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-        {/* Panel 1: Source Editor */}
+        {/* Panel 1: Source Code Editor */}
         <div
           style={{
             flex: '1 1 33.33%',
             display: 'flex',
             flexDirection: 'column',
-            borderRight: '1px solid rgba(255, 255, 255, 0.08)',
-            background: '#0d111a',
+            borderRight: '1px solid var(--border-default)',
+            background: 'var(--bg-surface)',
+            minWidth: 0,
           }}
         >
-          {/* Header */}
+          {/* Panel Header */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '6px 12px',
-              background: '#0f1422',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+              height: 34,
+              padding: '0 12px',
+              background: 'var(--bg-subtle)',
+              borderBottom: '1px solid var(--border-default)',
+              flexShrink: 0,
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Code2 size={15} color="#38bdf8" />
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>SOURCE CODE</span>
+              <Code2 size={13} style={{ color: 'var(--accent-text)' }} />
+              <span
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-sans)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Source Code
+              </span>
+
               <select
                 value={sourceLang}
                 onChange={(e) => setSourceLang(e.target.value)}
                 style={{
-                  background: '#161e31',
-                  color: '#38bdf8',
-                  border: '1px solid rgba(56, 189, 248, 0.2)',
-                  borderRadius: 4,
-                  padding: '2px 8px',
+                  background: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-xs)',
+                  padding: '2px 6px',
                   fontSize: 11,
-                  fontWeight: 600,
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 500,
                   outline: 'none',
                   cursor: 'pointer',
                 }}
@@ -421,23 +618,28 @@ export const App: React.FC = () => {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span
-                className={`badge ${sourceLineCount > 300 ? 'badge-error' : 'badge-info'}`}
-                style={{ fontSize: 10 }}
+                style={{
+                  fontSize: 10.5,
+                  fontFamily: 'var(--font-mono)',
+                  color: sourceLineCount > 300 ? 'var(--color-error)' : 'var(--text-muted)',
+                }}
               >
-                {sourceLineCount} / 300 lines
+                {sourceLineCount}/300 lines
               </span>
               <button
                 onClick={handleSwap}
-                title="Swap source & target languages"
+                title="Swap source &amp; target languages"
                 style={{
-                  background: 'none',
+                  background: 'transparent',
                   border: 'none',
-                  color: '#94a3b8',
+                  color: 'var(--text-secondary)',
                   cursor: 'pointer',
                   padding: 2,
+                  display: 'flex',
+                  alignItems: 'center',
                 }}
               >
-                <ArrowRightLeft size={14} />
+                <ArrowRightLeft size={12} />
               </button>
             </div>
           </div>
@@ -447,96 +649,143 @@ export const App: React.FC = () => {
             <Editor
               height="100%"
               language={getMonacoLang(sourceLang)}
-              theme="vs-dark"
+              theme={monacoTheme}
               value={sourceCode}
               onChange={(val) => setSourceCode(val || '')}
               options={{
-                fontSize: 13,
-                fontFamily: "'Fira Code', monospace",
+                fontSize: 12.5,
+                fontFamily: "'JetBrains Mono', 'IBM Plex Mono', 'Iosevka', monospace",
+                lineHeight: 19,
                 minimap: { enabled: false },
                 lineNumbers: 'on',
                 scrollBeyondLastLine: false,
                 automaticLayout: true,
                 tabSize: 4,
-                padding: { top: 10 },
+                padding: { top: 8, bottom: 8 },
+                renderLineHighlight: 'all',
               }}
             />
           </div>
         </div>
 
-        {/* Panel 2: Universal IR Tree Visualizer */}
+        {/* Panel 2: Universal Intermediate Representation (IR) Explorer */}
         <div
           style={{
             flex: '1 1 33.33%',
             display: 'flex',
             flexDirection: 'column',
-            borderRight: '1px solid rgba(255, 255, 255, 0.08)',
-            background: '#090d14',
+            borderRight: '1px solid var(--border-default)',
+            background: 'var(--bg-surface)',
+            minWidth: 0,
           }}
         >
-          {/* Header */}
+          {/* Panel Header */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '6px 12px',
-              background: '#0f1422',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+              height: 34,
+              padding: '0 12px',
+              background: 'var(--bg-subtle)',
+              borderBottom: '1px solid var(--border-default)',
+              flexShrink: 0,
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Layers size={15} color="#818cf8" />
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>UNIVERSAL IR TREE</span>
-              <span className="badge badge-info" style={{ fontSize: 10 }}>LANGUAGE-AGNOSTIC</span>
+              <Layers size={13} style={{ color: 'var(--text-secondary)' }} />
+              <span
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-sans)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Universal IR AST
+              </span>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontFamily: 'var(--font-mono)',
+                  color: 'var(--text-muted)',
+                  background: 'var(--bg-surface)',
+                  padding: '1px 5px',
+                  borderRadius: 'var(--radius-xs)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                Language-Agnostic
+              </span>
             </div>
+
             {irTree && (
-              <span style={{ fontSize: 11, color: '#64748b' }}>
-                Interactive AST nodes
+              <span
+                style={{
+                  fontSize: 10.5,
+                  fontFamily: 'var(--font-mono)',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                CST → IR Verified
               </span>
             )}
           </div>
 
-          {/* Tree Viewer */}
+          {/* IR Tree Viewer Component */}
           <div style={{ flex: 1, minHeight: 0 }}>
             <IRTreeViewer data={irTree} />
           </div>
         </div>
 
-        {/* Panel 3: Target Code Output */}
+        {/* Panel 3: Translated Target Code Output */}
         <div
           style={{
             flex: '1 1 33.33%',
             display: 'flex',
             flexDirection: 'column',
-            background: '#0d111a',
+            background: 'var(--bg-surface)',
+            minWidth: 0,
           }}
         >
-          {/* Header */}
+          {/* Panel Header */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '6px 12px',
-              background: '#0f1422',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+              height: 34,
+              padding: '0 12px',
+              background: 'var(--bg-subtle)',
+              borderBottom: '1px solid var(--border-default)',
+              flexShrink: 0,
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Code2 size={15} color="#a855f7" />
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>TRANSLATED CODE</span>
+              <Code2 size={13} style={{ color: 'var(--text-secondary)' }} />
+              <span
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-sans)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Translated Output
+              </span>
+
               <select
                 value={targetLang}
                 onChange={(e) => setTargetLang(e.target.value)}
                 style={{
-                  background: '#161e31',
-                  color: '#a855f7',
-                  border: '1px solid rgba(168, 85, 247, 0.2)',
-                  borderRadius: 4,
-                  padding: '2px 8px',
+                  background: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-xs)',
+                  padding: '2px 6px',
                   fontSize: 11,
-                  fontWeight: 600,
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 500,
                   outline: 'none',
                   cursor: 'pointer',
                 }}
@@ -549,26 +798,27 @@ export const App: React.FC = () => {
               </select>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <button
                 onClick={handleCopyTarget}
                 disabled={!targetCode}
-                title="Copy Target Code"
+                title="Copy generated code to clipboard"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 4,
-                  background: 'none',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: 4,
-                  padding: '3px 8px',
-                  color: copiedTarget ? '#34d399' : '#94a3b8',
-                  fontSize: 11,
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-xs)',
+                  padding: '2px 7px',
+                  color: copiedTarget ? 'var(--color-success)' : 'var(--text-secondary)',
+                  fontSize: 10.5,
+                  fontFamily: 'var(--font-mono)',
                   cursor: targetCode ? 'pointer' : 'default',
                   opacity: targetCode ? 1 : 0.5,
                 }}
               >
-                {copiedTarget ? <Check size={12} /> : <Copy size={12} />}
+                {copiedTarget ? <Check size={11} /> : <Copy size={11} />}
                 {copiedTarget ? 'Copied' : 'Copy'}
               </button>
             </div>
@@ -579,103 +829,178 @@ export const App: React.FC = () => {
             <Editor
               height="100%"
               language={getMonacoLang(targetLang)}
-              theme="vs-dark"
+              theme={monacoTheme}
               value={targetCode}
               onChange={(val) => setTargetCode(val || '')}
               options={{
-                fontSize: 13,
-                fontFamily: "'Fira Code', monospace",
+                fontSize: 12.5,
+                fontFamily: "'JetBrains Mono', 'IBM Plex Mono', 'Iosevka', monospace",
+                lineHeight: 19,
                 minimap: { enabled: false },
                 lineNumbers: 'on',
                 scrollBeyondLastLine: false,
                 automaticLayout: true,
                 tabSize: 4,
-                padding: { top: 10 },
+                padding: { top: 8, bottom: 8 },
+                renderLineHighlight: 'all',
               }}
             />
           </div>
         </div>
       </div>
 
-      {/* Bottom Panel: Behavioral Equivalence Console & Unified Diff */}
+      {/* 3. Lower Execution Console & Behavioral Verification Panel */}
       <div
         style={{
-          height: 220,
+          height: isConsoleOpen ? 230 : 34,
           display: 'flex',
           flexDirection: 'column',
-          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-          background: '#0a0d14',
+          borderTop: '1px solid var(--border-default)',
+          background: 'var(--bg-surface)',
           zIndex: 10,
+          transition: 'height 0.2s ease',
+          flexShrink: 0,
         }}
       >
-        {/* Bottom Tabs */}
+        {/* Bottom Tab Bar */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '4px 16px',
-            background: '#0d111a',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+            height: 34,
+            padding: '0 12px',
+            background: 'var(--bg-subtle)',
+            borderBottom: isConsoleOpen ? '1px solid var(--border-default)' : 'none',
+            flexShrink: 0,
           }}
         >
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <button
-              onClick={() => setActiveBottomTab('verification')}
+              onClick={() => {
+                setActiveBottomTab('verification');
+                setIsConsoleOpen(true);
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
-                padding: '4px 12px',
-                borderRadius: 4,
+                padding: '4px 10px',
+                borderRadius: 'var(--radius-xs)',
                 fontSize: 11,
-                fontWeight: 600,
+                fontFamily: 'var(--font-sans)',
+                fontWeight: activeBottomTab === 'verification' ? 600 : 500,
                 border: 'none',
-                background: activeBottomTab === 'verification' ? '#161e31' : 'none',
-                color: activeBottomTab === 'verification' ? '#38bdf8' : '#64748b',
+                background:
+                  activeBottomTab === 'verification' && isConsoleOpen
+                    ? 'var(--bg-surface)'
+                    : 'transparent',
+                color:
+                  activeBottomTab === 'verification' && isConsoleOpen
+                    ? 'var(--text-primary)'
+                    : 'var(--text-secondary)',
+                boxShadow:
+                  activeBottomTab === 'verification' && isConsoleOpen
+                    ? 'var(--shadow-sm)'
+                    : 'none',
                 cursor: 'pointer',
               }}
             >
-              <Terminal size={13} />
-              Execution & Behavioral Verification
+              <Terminal size={12} />
+              Behavioral Verification
+              {verificationResult && (
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: verificationResult.match
+                      ? 'var(--color-success)'
+                      : 'var(--color-error)',
+                    display: 'inline-block',
+                  }}
+                />
+              )}
             </button>
+
             <button
-              onClick={() => setActiveBottomTab('diagnostics')}
+              onClick={() => {
+                setActiveBottomTab('diagnostics');
+                setIsConsoleOpen(true);
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
-                padding: '4px 12px',
-                borderRadius: 4,
+                padding: '4px 10px',
+                borderRadius: 'var(--radius-xs)',
                 fontSize: 11,
-                fontWeight: 600,
+                fontFamily: 'var(--font-sans)',
+                fontWeight: activeBottomTab === 'diagnostics' ? 600 : 500,
                 border: 'none',
-                background: activeBottomTab === 'diagnostics' ? '#161e31' : 'none',
-                color: activeBottomTab === 'diagnostics' ? '#f43f5e' : '#64748b',
+                background:
+                  activeBottomTab === 'diagnostics' && isConsoleOpen
+                    ? 'var(--bg-surface)'
+                    : 'transparent',
+                color:
+                  activeBottomTab === 'diagnostics' && isConsoleOpen
+                    ? 'var(--text-primary)'
+                    : 'var(--text-secondary)',
+                boxShadow:
+                  activeBottomTab === 'diagnostics' && isConsoleOpen
+                    ? 'var(--shadow-sm)'
+                    : 'none',
                 cursor: 'pointer',
               }}
             >
-              <AlertTriangle size={13} />
-              Scope Diagnostics ({diagnostics.filter((d) => d.severity === 'error').length})
+              <AlertTriangle size={12} />
+              Diagnostics ({diagnostics.filter((d) => d.severity === 'error').length})
             </button>
           </div>
 
-          <div style={{ fontSize: 11, color: '#64748b' }}>
-            Isolated Subprocess Execution Sandbox • Output Normalization Active
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span
+              style={{
+                fontSize: 10.5,
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text-muted)',
+              }}
+            >
+              Subprocess Sandbox • AST Output Normalization Active
+            </span>
+
+            {/* Collapse / Expand Toggle */}
+            <button
+              onClick={() => setIsConsoleOpen(!isConsoleOpen)}
+              title={isConsoleOpen ? 'Collapse Console' : 'Expand Console'}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                padding: 2,
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              {isConsoleOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+            </button>
           </div>
         </div>
 
-        {/* Console / Diff Content */}
-        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <VerificationDiff
-            result={verificationResult}
-            isLoading={isVerifying}
-            diagnostics={diagnostics}
-            sourceLang={sourceLang}
-            targetLang={targetLang}
-            onAutoFixProcedural={handleAutoFixProcedural}
-          />
-        </div>
+        {/* Verification Diff / Diagnostic Body */}
+        {isConsoleOpen && (
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <VerificationDiff
+              result={verificationResult}
+              isLoading={isVerifying}
+              diagnostics={activeBottomTab === 'diagnostics' ? diagnostics : []}
+              sourceLang={sourceLang}
+              targetLang={targetLang}
+              onAutoFixProcedural={handleAutoFixProcedural}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
