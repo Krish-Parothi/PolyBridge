@@ -92,8 +92,17 @@ class TypeInferrer:
                 t = self._check_call_in_expr(a, func_name, param_index)
                 if t:
                     return t
-        elif isinstance(stmt, (IfStmt, WhileStmt)):
-            for s in (stmt.then_branch if isinstance(stmt, IfStmt) else stmt.body):
+        elif isinstance(stmt, IfStmt):
+            for s in stmt.then_branch:
+                t = self._check_call_in_stmt(s, func_name, param_index)
+                if t:
+                    return t
+            for s in stmt.else_branch:
+                t = self._check_call_in_stmt(s, func_name, param_index)
+                if t:
+                    return t
+        elif isinstance(stmt, WhileStmt):
+            for s in stmt.body:
                 t = self._check_call_in_stmt(s, func_name, param_index)
                 if t:
                     return t
@@ -112,12 +121,23 @@ class TypeInferrer:
                 arg = expr.args[param_index]
                 if isinstance(arg, Identifier) and arg.name in self.global_env:
                     return self.global_env[arg.name]
+                elif isinstance(arg, ArrayLiteral):
+                    return arg.inferred_type if arg.inferred_type.kind != TypeKind.UNKNOWN else IRType.array_of(IRType.int_type())
+                elif isinstance(arg, Literal):
+                    return arg.inferred_type
                 elif arg.inferred_type and arg.inferred_type.kind != TypeKind.UNKNOWN:
                     return arg.inferred_type
             for a in expr.args:
                 t = self._check_call_in_expr(a, func_name, param_index)
                 if t:
                     return t
+        elif isinstance(expr, BinaryOp):
+            t = self._check_call_in_expr(expr.left, func_name, param_index)
+            if t:
+                return t
+            return self._check_call_in_expr(expr.right, func_name, param_index)
+        elif isinstance(expr, UnaryOp):
+            return self._check_call_in_expr(expr.operand, func_name, param_index)
         return None
 
     def _check_usage(self, node: Any, param_name: str) -> Optional[IRType]:
@@ -126,6 +146,10 @@ class TypeInferrer:
         if isinstance(node, ArrayAccess):
             if isinstance(node.array, Identifier) and node.array.name == param_name:
                 return IRType.array_of(IRType.int_type())
+            if isinstance(node.array, ArrayAccess) and isinstance(node.array.array, Identifier) and node.array.array.name == param_name:
+                return IRType.array_of(IRType.array_of(IRType.int_type()))
+            if isinstance(node.index, Identifier) and node.index.name == param_name:
+                return IRType.int_type()
             t = self._check_usage(node.array, param_name)
             if t:
                 return t
@@ -135,6 +159,8 @@ class TypeInferrer:
         elif isinstance(node, ArrayLength):
             if isinstance(node.array, Identifier) and node.array.name == param_name:
                 return IRType.array_of(IRType.int_type())
+            if isinstance(node.array, ArrayAccess) and isinstance(node.array.array, Identifier) and node.array.array.name == param_name:
+                return IRType.array_of(IRType.array_of(IRType.int_type()))
             t = self._check_usage(node.array, param_name)
             if t:
                 return t
@@ -152,6 +178,10 @@ class TypeInferrer:
                     if t:
                         return t
         elif isinstance(node, ForRangeStmt):
+            if (isinstance(node.start, Identifier) and node.start.name == param_name) or \
+               (isinstance(node.end, Identifier) and node.end.name == param_name) or \
+               (node.step and isinstance(node.step, Identifier) and node.step.name == param_name):
+                return IRType.int_type()
             t = self._check_usage(node.start, param_name)
             if t:
                 return t
@@ -190,9 +220,13 @@ class TypeInferrer:
             if isinstance(node.left, Identifier) and node.left.name == param_name:
                 if isinstance(node.right, ArrayAccess):
                     return IRType.int_type()
+                if node.op in ["<", "<=", ">", ">=", "+", "-", "*", "/", "//", "%"]:
+                    return IRType.int_type()
                 return node.right.inferred_type if node.right and node.right.inferred_type.kind != TypeKind.UNKNOWN else IRType.int_type()
             if isinstance(node.right, Identifier) and node.right.name == param_name:
                 if isinstance(node.left, ArrayAccess):
+                    return IRType.int_type()
+                if node.op in ["<", "<=", ">", ">=", "+", "-", "*", "/", "//", "%"]:
                     return IRType.int_type()
                 return node.left.inferred_type if node.left and node.left.inferred_type.kind != TypeKind.UNKNOWN else IRType.int_type()
             t = self._check_usage(node.left, param_name)
@@ -202,8 +236,24 @@ class TypeInferrer:
             if t:
                 return t
         elif isinstance(node, UnaryOp):
+            if node.op in ["-", "+"]:
+                if isinstance(node.operand, Identifier) and node.operand.name == param_name:
+                    return IRType.int_type()
+            elif node.op in ["!", "not"]:
+                if isinstance(node.operand, Identifier) and node.operand.name == param_name:
+                    return IRType.bool_type()
             return self._check_usage(node.operand, param_name)
         elif isinstance(node, FunctionCall):
+            if node.name in ["len", "size"] and node.args:
+                if isinstance(node.args[0], Identifier) and node.args[0].name == param_name:
+                    return IRType.array_of(IRType.int_type())
+            if (node.name.endswith(".append") or node.name.endswith(".push")):
+                obj = node.name.split(".")[0]
+                if obj == param_name:
+                    return IRType.array_of(IRType.int_type())
+            if node.name in ["append", "push"] and node.args:
+                if isinstance(node.args[0], Identifier) and node.args[0].name == param_name:
+                    return IRType.array_of(IRType.int_type())
             for a in node.args:
                 t = self._check_usage(a, param_name)
                 if t:

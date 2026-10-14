@@ -74,6 +74,7 @@ class VerifyRequest(BaseModel):
 
 class VerifyResponse(BaseModel):
     match: bool
+    status: str = Field(..., description="verified_match | output_mismatch | target_compilation_failure | source_compilation_failure | source_runtime_failure | target_runtime_failure | timeout | runtime_unavailable")
     source_result: Dict[str, Any]
     target_result: Dict[str, Any]
     diff: List[str]
@@ -182,10 +183,42 @@ def verify_behavior(req: VerifyRequest):
     src_res = CodeRunner.run_code(req.source_code, req.source_lang, req.stdin_data)
     tgt_res = CodeRunner.run_code(req.target_code, req.target_lang, req.stdin_data)
 
-    is_equal, diff = OutputNormalizer.compare_outputs(src_res.stdout, tgt_res.stdout)
+    if src_res.status == "runtime_unavailable" or tgt_res.status == "runtime_unavailable":
+        classification = "runtime_unavailable"
+        match = False
+        diff = []
+    elif src_res.status == "timeout" or tgt_res.status == "timeout":
+        classification = "timeout"
+        match = False
+        diff = []
+    elif src_res.status == "compilation_error":
+        classification = "source_compilation_failure"
+        match = False
+        diff = []
+    elif tgt_res.status == "compilation_error":
+        classification = "target_compilation_failure"
+        match = False
+        diff = []
+    elif src_res.status == "runtime_error" or src_res.exit_code != 0:
+        classification = "source_runtime_failure"
+        match = False
+        diff = []
+    elif tgt_res.status == "runtime_error" or tgt_res.exit_code != 0:
+        classification = "target_runtime_failure"
+        match = False
+        diff = []
+    else:
+        is_equal, diff = OutputNormalizer.compare_outputs(src_res.stdout, tgt_res.stdout)
+        if is_equal:
+            classification = "verified_match"
+            match = True
+        else:
+            classification = "output_mismatch"
+            match = False
 
     return VerifyResponse(
-        match=is_equal and (src_res.exit_code == 0) and (tgt_res.exit_code == 0),
+        match=match,
+        status=classification,
         source_result=src_res.to_dict(),
         target_result=tgt_res.to_dict(),
         diff=diff,

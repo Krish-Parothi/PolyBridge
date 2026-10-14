@@ -18,6 +18,7 @@ class CppEmitter:
         self.used_includes: Set[str] = {"#include <iostream>"}
         self.module_aliases: Dict[str, str] = {}
         self.uses_vectors = False
+        self.needs_floor_div = False
 
     def emit(self, program: Program) -> str:
         self.declared_vars.clear()
@@ -25,6 +26,7 @@ class CppEmitter:
         self.used_includes = {"#include <iostream>"}
         self.module_aliases.clear()
         self.uses_vectors = False
+        self.needs_floor_div = False
 
         # Scan for imported modules
         for imp in getattr(program, "imports", []):
@@ -51,6 +53,20 @@ class CppEmitter:
             main_lines.extend(self._emit_statement(stmt, indent_level=1))
         main_lines.append(f"{self._indent(1)}return 0;")
         main_lines.append("}")
+
+        if self.needs_floor_div:
+            floor_helper = [
+                "int floorDiv(int a, int b) {",
+                f"{self.indent_str}int d = a / b;",
+                f"{self.indent_str}int r = a % b;",
+                f"{self.indent_str}if ((r != 0) && ((r < 0) ^ (b < 0))) {{",
+                f"{self.indent_str}{self.indent_str}d--;",
+                f"{self.indent_str}}}",
+                f"{self.indent_str}return d;",
+                "}",
+                ""
+            ]
+            body_lines = floor_helper + body_lines
 
         lines: List[str] = []
         for inc in sorted(self.used_includes):
@@ -213,6 +229,9 @@ class CppEmitter:
                 op = "&&"
             elif op == "or":
                 op = "||"
+            elif op == "//":
+                self.needs_floor_div = True
+                return f"floorDiv({left_str}, {right_str})"
             return f"({left_str} {op} {right_str})"
 
         elif isinstance(expr, UnaryOp):
