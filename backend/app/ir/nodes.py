@@ -458,6 +458,22 @@ class ReturnStmt(Statement):
         }
 
 @dataclass
+class BreakStmt(Statement):
+    def to_dict(self) -> Dict[str, Any]:
+        return {"node": "BreakStmt"}
+
+    def to_tree_node(self) -> Dict[str, Any]:
+        return {"name": "Break", "attributes": {}, "children": []}
+
+@dataclass
+class ContinueStmt(Statement):
+    def to_dict(self) -> Dict[str, Any]:
+        return {"node": "ContinueStmt"}
+
+    def to_tree_node(self) -> Dict[str, Any]:
+        return {"name": "Continue", "attributes": {}, "children": []}
+
+@dataclass
 class PrintStmt(Statement):
     args: List[Expression] = field(default_factory=list)
 

@@ -2,9 +2,9 @@ from typing import List, Optional, Set, Dict
 from app.ir.nodes import (
         Program, FunctionDef, Parameter, Statement, Expression,
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
-        ReturnStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
-        BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
-        FunctionCall, IRType, TypeKind
+        ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt,
+        Literal, Identifier, BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess,
+        ArrayLength, FunctionCall, IRType, TypeKind
     )
 from app.libraries.registry import LibraryRegistry
 
@@ -117,7 +117,7 @@ class GoEmitter:
             return [f"{ind}{target} = {val}"]
 
         elif isinstance(stmt, IfStmt):
-            cond = self._emit_expr(stmt.condition)
+            cond = self._emit_condition(stmt.condition)
             lines = [f"{ind}if {cond} {{"]
             for s in stmt.then_branch:
                 lines.extend(self._emit_statement(s, indent_level + 1))
@@ -129,7 +129,7 @@ class GoEmitter:
             return lines
 
         elif isinstance(stmt, WhileStmt):
-            cond = self._emit_expr(stmt.condition)
+            cond = self._emit_condition(stmt.condition)
             lines = [f"{ind}for {cond} {{"]
             for s in stmt.body:
                 lines.extend(self._emit_statement(s, indent_level + 1))
@@ -152,14 +152,51 @@ class GoEmitter:
                 return [f"{ind}return {self._emit_expr(stmt.value)}"]
             return [f"{ind}return"]
 
+        elif isinstance(stmt, BreakStmt):
+            return [f"{ind}break"]
+
+        elif isinstance(stmt, ContinueStmt):
+            return [f"{ind}continue"]
+
         elif isinstance(stmt, PrintStmt):
             args_str = ", ".join(self._emit_expr(a) for a in stmt.args)
             return [f"{ind}fmt.Println({args_str})"]
 
         elif isinstance(stmt, ExpressionStmt):
+            if isinstance(stmt.expr, FunctionCall):
+                if (stmt.expr.name.endswith(".append") or stmt.expr.name.endswith(".push")) and stmt.expr.args:
+                    obj = stmt.expr.name.split(".")[0]
+                    arg = self._emit_expr(stmt.expr.args[0])
+                    return [f"{ind}{obj} = append({obj}, {arg})"]
+                elif stmt.expr.name == "append" and len(stmt.expr.args) == 2:
+                    obj = self._emit_expr(stmt.expr.args[0])
+                    arg = self._emit_expr(stmt.expr.args[1])
+                    return [f"{ind}{obj} = append({obj}, {arg})"]
             return [f"{ind}{self._emit_expr(stmt.expr)}"]
 
         return []
+
+    def _emit_condition(self, expr: Optional[Expression]) -> str:
+        if not expr:
+            return "true"
+        cond_str = self._emit_expr(expr)
+        if isinstance(expr, BinaryOp) and expr.op in ["==", "!=", "===", "!==", "<", "<=", ">", ">=", "&&", "||", "and", "or"]:
+            return cond_str
+        if isinstance(expr, UnaryOp) and expr.op in ["!", "not"]:
+            return cond_str
+        if isinstance(expr, Literal) and isinstance(expr.value, bool):
+            return cond_str
+        if expr.inferred_type.kind == TypeKind.BOOL:
+            return cond_str
+        if expr.inferred_type.kind == TypeKind.INT:
+            return f"({cond_str} != 0)"
+        elif expr.inferred_type.kind == TypeKind.STRING:
+            return f'({cond_str} != "")'
+        elif expr.inferred_type.kind == TypeKind.ARRAY:
+            return f"(len({cond_str}) > 0)"
+        elif isinstance(expr, Identifier):
+            return f"({cond_str} != 0)"
+        return cond_str
 
     def _emit_expr(self, expr: Optional[Expression]) -> str:
         if not expr:
@@ -198,12 +235,31 @@ class GoEmitter:
 
         elif isinstance(expr, ArrayLiteral):
             elems = ", ".join(self._emit_expr(e) for e in expr.elements)
-            # Default slice type in Go
+            if expr.inferred_type and expr.inferred_type.kind == TypeKind.ARRAY:
+                gtype = self._to_go_type(expr.inferred_type)
+                return f"{gtype}{{{elems}}}"
+            if expr.elements and isinstance(expr.elements[0], ArrayLiteral):
+                return f"[][]int{{{elems}}}"
             return f"[]int{{{elems}}}"
 
         elif isinstance(expr, ArrayAccess):
             arr_str = self._emit_expr(expr.array)
-            idx_str = self._emit_expr(expr.index)
+            is_neg = False
+            offset = ""
+            if isinstance(expr.index, Literal) and isinstance(expr.index.value, int) and expr.index.value < 0:
+                is_neg = True
+                offset = str(-expr.index.value)
+            elif isinstance(expr.index, UnaryOp) and expr.index.op == "-":
+                is_neg = True
+                offset = self._emit_expr(expr.index.operand)
+
+            if is_neg:
+                idx_str = f"(len({arr_str}) - {offset})"
+            else:
+                idx_str = self._emit_expr(expr.index)
+
+            if expr.array.inferred_type.kind == TypeKind.STRING:
+                return f"string({arr_str}[{idx_str}])"
             return f"{arr_str}[{idx_str}]"
 
         elif isinstance(expr, ArrayLength):
@@ -217,6 +273,10 @@ class GoEmitter:
                 self.used_imports.add(req_import)
             if translated:
                 return translated
+            if expr.name.endswith(".push") or expr.name.endswith(".append"):
+                if len(args_strs) == 1:
+                    obj = expr.name.split(".")[0]
+                    return f"append({obj}, {args_strs[0]})"
             args_str = ", ".join(args_strs)
             return f"{expr.name}({args_str})"
 

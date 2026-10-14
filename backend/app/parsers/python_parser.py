@@ -5,7 +5,7 @@ import tree_sitter_python as tspython
 from app.ir.nodes import (
         Program, FunctionDef, Parameter, Statement, Expression,
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
-        ReturnStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
+        ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
         FunctionCall, IRType, TypeKind, ImportStmt
     )
@@ -98,6 +98,47 @@ class PythonParser:
             for p in params_node.children:
                 if p.type == "identifier":
                     params.append(Parameter(name=self._get_text(p, code_bytes), param_type=IRType.unknown()))
+                elif p.type in ["typed_parameter", "default_parameter", "typed_default_parameter"]:
+                    id_node = None
+                    for c in p.children:
+                        if c.type == "identifier":
+                            id_node = c
+                            break
+                    if id_node:
+                        type_node = p.child_by_field_name("type")
+                        ptype = IRType.unknown()
+                        if type_node:
+                            t_text = self._get_text(type_node, code_bytes).strip()
+                            if t_text == "int":
+                                ptype = IRType.int_type()
+                            elif t_text == "float":
+                                ptype = IRType.float_type()
+                            elif t_text == "str":
+                                ptype = IRType.string_type()
+                            elif t_text == "bool":
+                                ptype = IRType.bool_type()
+                            elif "list[list[" in t_text or "[][]" in t_text:
+                                ptype = IRType(TypeKind.ARRAY, element_type=IRType.array_of(IRType.int_type()))
+                            elif "list" in t_text or "[]" in t_text:
+                                ptype = IRType.array_of(IRType.int_type())
+                        params.append(Parameter(name=self._get_text(id_node, code_bytes), param_type=ptype))
+
+        ret_type = IRType.unknown()
+        ret_node = node.child_by_field_name("return_type")
+        if ret_node:
+            t_text = self._get_text(ret_node, code_bytes).strip()
+            if t_text == "int":
+                ret_type = IRType.int_type()
+            elif t_text == "float":
+                ret_type = IRType.float_type()
+            elif t_text == "str":
+                ret_type = IRType.string_type()
+            elif t_text == "bool":
+                ret_type = IRType.bool_type()
+            elif "list[list[" in t_text or "[][]" in t_text:
+                ret_type = IRType(TypeKind.ARRAY, element_type=IRType.array_of(IRType.int_type()))
+            elif "list" in t_text or "[]" in t_text:
+                ret_type = IRType.array_of(IRType.int_type())
 
         body_stmts: List[Statement] = []
         for child in body_node.children:
@@ -108,7 +149,7 @@ class PythonParser:
         return FunctionDef(
             name=func_name,
             params=params,
-            return_type=IRType.unknown(),
+            return_type=ret_type,
             body=body_stmts
         )
 
@@ -152,6 +193,12 @@ class PythonParser:
                     val = self._parse_expression(c, code_bytes)
                     break
             return [ReturnStmt(value=val)]
+
+        elif ntype == "break_statement":
+            return [BreakStmt()]
+
+        elif ntype == "continue_statement":
+            return [ContinueStmt()]
 
         elif ntype == "block":
             stmts: List[Statement] = []

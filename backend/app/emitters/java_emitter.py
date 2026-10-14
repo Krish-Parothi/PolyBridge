@@ -2,7 +2,7 @@ from typing import List, Optional, Set, Dict
 from app.ir.nodes import (
         Program, FunctionDef, Parameter, Statement, Expression,
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
-        ReturnStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
+        ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
         FunctionCall, IRType, TypeKind
     )
@@ -156,7 +156,7 @@ class JavaEmitter:
             return [f"{ind}{target} = {val};"]
 
         elif isinstance(stmt, IfStmt):
-            cond = self._emit_expr(stmt.condition)
+            cond = self._emit_condition(stmt.condition)
             lines = [f"{ind}if ({cond}) {{"]
             for s in stmt.then_branch:
                 lines.extend(self._emit_statement(s, indent_level + 1))
@@ -168,7 +168,7 @@ class JavaEmitter:
             return lines
 
         elif isinstance(stmt, WhileStmt):
-            cond = self._emit_expr(stmt.condition)
+            cond = self._emit_condition(stmt.condition)
             lines = [f"{ind}while ({cond}) {{"]
             for s in stmt.body:
                 lines.extend(self._emit_statement(s, indent_level + 1))
@@ -191,6 +191,12 @@ class JavaEmitter:
                 return [f"{ind}return {self._emit_expr(stmt.value)};"]
             return [f"{ind}return;"]
 
+        elif isinstance(stmt, BreakStmt):
+            return [f"{ind}break;"]
+
+        elif isinstance(stmt, ContinueStmt):
+            return [f"{ind}continue;"]
+
         elif isinstance(stmt, PrintStmt):
             if len(stmt.args) == 1:
                 arg = stmt.args[0]
@@ -206,9 +212,52 @@ class JavaEmitter:
                 return [f"{ind}System.out.println({args_str});"]
 
         elif isinstance(stmt, ExpressionStmt):
+            if isinstance(stmt.expr, FunctionCall):
+                if (stmt.expr.name.endswith(".append") or stmt.expr.name.endswith(".push")) and stmt.expr.args:
+                    obj = stmt.expr.name.split(".")[0]
+                    arg = self._emit_expr(stmt.expr.args[0])
+                    self.uses_arrays = True
+                    self.used_imports.add("import java.util.Arrays;")
+                    return [
+                        f"{ind}{obj} = Arrays.copyOf({obj}, {obj}.length + 1);",
+                        f"{ind}{obj}[{obj}.length - 1] = {arg};"
+                    ]
+                elif stmt.expr.name == "append" and len(stmt.expr.args) == 2:
+                    obj = self._emit_expr(stmt.expr.args[0])
+                    arg = self._emit_expr(stmt.expr.args[1])
+                    self.uses_arrays = True
+                    self.used_imports.add("import java.util.Arrays;")
+                    return [
+                        f"{ind}{obj} = Arrays.copyOf({obj}, {obj}.length + 1);",
+                        f"{ind}{obj}[{obj}.length - 1] = {arg};"
+                    ]
             return [f"{ind}{self._emit_expr(stmt.expr)};"]
 
         return []
+
+    def _emit_condition(self, expr: Optional[Expression]) -> str:
+        if not expr:
+            return "true"
+        cond_str = self._emit_expr(expr)
+        if isinstance(expr, BinaryOp) and expr.op in ["==", "!=", "===", "!==", "<", "<=", ">", ">=", "&&", "||", "and", "or"]:
+            return cond_str
+        if isinstance(expr, UnaryOp) and expr.op in ["!", "not"]:
+            return cond_str
+        if isinstance(expr, Literal) and isinstance(expr.value, bool):
+            return cond_str
+        if expr.inferred_type.kind == TypeKind.BOOL:
+            return cond_str
+        if expr.inferred_type.kind == TypeKind.INT:
+            return f"({cond_str} != 0)"
+        elif expr.inferred_type.kind == TypeKind.STRING:
+            return f"(!{cond_str}.isEmpty())"
+        elif expr.inferred_type.kind == TypeKind.ARRAY:
+            return f"({cond_str}.length > 0)"
+        elif isinstance(expr, Identifier):
+            if self.var_types.get(expr.name) == "boolean":
+                return cond_str
+            return f"({cond_str} != 0)"
+        return cond_str
 
     def _emit_expr(self, expr: Optional[Expression], expected_type: str = "") -> str:
         if not expr:
@@ -228,6 +277,17 @@ class JavaEmitter:
             left_str = self._emit_expr(expr.left)
             right_str = self._emit_expr(expr.right)
             op = expr.op
+
+            is_str = (expr.left.inferred_type.kind == TypeKind.STRING or 
+                      expr.right.inferred_type.kind == TypeKind.STRING or
+                      self.var_types.get(left_str) == "String" or
+                      self.var_types.get(right_str) == "String")
+            if is_str:
+                if op in ["==", "==="]:
+                    return f"{left_str}.equals({right_str})"
+                elif op in ["!=", "!=="]:
+                    return f"(!{left_str}.equals({right_str}))"
+
             if op == "and":
                 op = "&&"
             elif op == "or":
@@ -247,19 +307,43 @@ class JavaEmitter:
 
         elif isinstance(expr, ArrayLiteral):
             elems = ", ".join(self._emit_expr(e) for e in expr.elements)
-            # In Java, e.g. new int[]{1, 2, 3}
-            base = "int"
+            jtype = self._to_java_type(expr.inferred_type) if expr.inferred_type and expr.inferred_type.kind != TypeKind.UNKNOWN else ""
+            if jtype and jtype.endswith("[]"):
+                return f"new {jtype}{{{elems}}}"
             if expected_type.endswith("[]"):
-                base = expected_type[:-2]
-            return f"new {base}[]{{{elems}}}"
+                return f"new {expected_type}{{{elems}}}"
+            if expr.elements and isinstance(expr.elements[0], ArrayLiteral):
+                return f"new int[][]{{{elems}}}"
+            return f"new int[]{{{elems}}}"
 
         elif isinstance(expr, ArrayAccess):
             arr_str = self._emit_expr(expr.array)
-            idx_str = self._emit_expr(expr.index)
+            is_str = expr.array.inferred_type.kind == TypeKind.STRING or self.var_types.get(arr_str) == "String"
+            
+            is_neg = False
+            offset = ""
+            if isinstance(expr.index, Literal) and isinstance(expr.index.value, int) and expr.index.value < 0:
+                is_neg = True
+                offset = str(-expr.index.value)
+            elif isinstance(expr.index, UnaryOp) and expr.index.op == "-":
+                is_neg = True
+                offset = self._emit_expr(expr.index.operand)
+
+            if is_neg:
+                len_call = f"{arr_str}.length()" if is_str else f"{arr_str}.length"
+                idx_str = f"({len_call} - {offset})"
+            else:
+                idx_str = self._emit_expr(expr.index)
+
+            if is_str:
+                return f"String.valueOf({arr_str}.charAt({idx_str}))"
             return f"{arr_str}[{idx_str}]"
 
         elif isinstance(expr, ArrayLength):
             arr_str = self._emit_expr(expr.array)
+            is_str = expr.array.inferred_type.kind == TypeKind.STRING or self.var_types.get(arr_str) == "String"
+            if is_str:
+                return f"{arr_str}.length()"
             return f"{arr_str}.length"
 
         elif isinstance(expr, FunctionCall):

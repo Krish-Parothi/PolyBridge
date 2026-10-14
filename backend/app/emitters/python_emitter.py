@@ -2,7 +2,7 @@ from typing import List, Optional, Set, Dict
 from app.ir.nodes import (
         Program, FunctionDef, Parameter, Statement, Expression,
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
-        ReturnStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
+        ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
         FunctionCall, IRType, TypeKind
     )
@@ -124,6 +124,12 @@ class PythonEmitter:
                 return [f"{ind}return {self._emit_expr(stmt.value)}"]
             return [f"{ind}return"]
 
+        elif isinstance(stmt, BreakStmt):
+            return [f"{ind}break"]
+
+        elif isinstance(stmt, ContinueStmt):
+            return [f"{ind}continue"]
+
         elif isinstance(stmt, PrintStmt):
             args_str = ", ".join(self._emit_expr(a) for a in stmt.args)
             return [f"{ind}print({args_str})"]
@@ -186,6 +192,11 @@ class PythonEmitter:
                 self.used_imports.add(req_import)
             if translated:
                 return translated
+            if expr.name.endswith(".push") and len(args_strs) == 1:
+                obj = expr.name[:-5]
+                return f"{obj}.append({args_strs[0]})"
+            if expr.name == "append" and len(args_strs) == 2:
+                return f"{args_strs[0]}.append({args_strs[1]})"
             args_str = ", ".join(args_strs)
             return f"{expr.name}({args_str})"
 

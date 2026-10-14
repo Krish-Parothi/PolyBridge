@@ -2,7 +2,7 @@ from typing import List, Optional, Set, Dict
 from app.ir.nodes import (
         Program, FunctionDef, Parameter, Statement, Expression,
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
-        ReturnStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
+        ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
         FunctionCall, IRType, TypeKind
     )
@@ -122,6 +122,12 @@ class JavaScriptEmitter:
                 return [f"{ind}return {self._emit_expr(stmt.value)};"]
             return [f"{ind}return;"]
 
+        elif isinstance(stmt, BreakStmt):
+            return [f"{ind}break;"]
+
+        elif isinstance(stmt, ContinueStmt):
+            return [f"{ind}continue;"]
+
         elif isinstance(stmt, PrintStmt):
             args_str = ", ".join(self._emit_expr(a) for a in stmt.args)
             return [f"{ind}console.log({args_str});"]
@@ -168,6 +174,13 @@ class JavaScriptEmitter:
 
         elif isinstance(expr, ArrayAccess):
             arr_str = self._emit_expr(expr.array)
+            # Handle negative indexing like arr[-1]
+            if isinstance(expr.index, Literal) and isinstance(expr.index.value, int) and expr.index.value < 0:
+                offset = abs(expr.index.value)
+                return f"{arr_str}[({arr_str}.length - {offset})]"
+            elif isinstance(expr.index, UnaryOp) and expr.index.op == "-":
+                operand_str = self._emit_expr(expr.index.operand)
+                return f"{arr_str}[({arr_str}.length - {operand_str})]"
             idx_str = self._emit_expr(expr.index)
             return f"{arr_str}[{idx_str}]"
 
@@ -182,6 +195,11 @@ class JavaScriptEmitter:
                 self.used_imports.add(req_import)
             if translated:
                 return translated
+            if expr.name.endswith(".append") and len(args_strs) == 1:
+                obj = expr.name[:-7]
+                return f"{obj}.push({args_strs[0]})"
+            if expr.name == "append" and len(args_strs) == 2:
+                return f"{args_strs[0]}.push({args_strs[1]})"
             args_str = ", ".join(args_strs)
             return f"{expr.name}({args_str})"
 

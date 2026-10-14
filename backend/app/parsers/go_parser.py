@@ -5,7 +5,7 @@ import tree_sitter_go as tsgo
 from app.ir.nodes import (
         Program, FunctionDef, Parameter, Statement, Expression,
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
-        ReturnStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
+        ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
         FunctionCall, IRType, TypeKind, ImportStmt
     )
@@ -250,6 +250,12 @@ class GoParser:
                     val = self._parse_expression(c, code_bytes)
                     break
             return [ReturnStmt(value=val)]
+
+        elif ntype == "break_statement":
+            return [BreakStmt()]
+
+        elif ntype == "continue_statement":
+            return [ContinueStmt()]
 
         elif ntype == "block":
             stmts: List[Statement] = []

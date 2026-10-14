@@ -1,9 +1,9 @@
 from typing import Dict, Optional, List, Any
 from app.ir.nodes import (
     IRType, TypeKind, Program, FunctionDef, Statement, Expression,
-Literal, Identifier, BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess,
-ArrayLength, FunctionCall, VarDecl, Assignment, IfStmt, WhileStmt,
-ForRangeStmt, ReturnStmt, PrintStmt, ExpressionStmt
+    Literal, Identifier, BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess,
+    ArrayLength, FunctionCall, VarDecl, Assignment, IfStmt, WhileStmt,
+    ForRangeStmt, ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt
 )
 
 class TypeInferrer:
@@ -262,8 +262,19 @@ class TypeInferrer:
             for arg in stmt.args:
                 self._infer_expression(arg, env)
 
+        elif isinstance(stmt, (BreakStmt, ContinueStmt)):
+            pass
+
         elif isinstance(stmt, ExpressionStmt):
             self._infer_expression(stmt.expr, env)
+            if isinstance(stmt.expr, FunctionCall):
+                name = stmt.expr.name
+                if (name.endswith(".append") or name.endswith(".push")) and stmt.expr.args:
+                    obj = name.split(".")[0]
+                    if obj in env and env[obj].kind == TypeKind.ARRAY:
+                        arg_type = self._infer_expression(stmt.expr.args[0], env)
+                        if env[obj].element_type is None or env[obj].element_type.kind == TypeKind.UNKNOWN:
+                            env[obj].element_type = arg_type
 
     def _infer_expression(self, expr: Expression, env: Dict[str, IRType]) -> IRType:
         if isinstance(expr, Literal):
@@ -326,7 +337,9 @@ class TypeInferrer:
             arr_type = self._infer_expression(expr.array, env) if expr.array else IRType.unknown()
             if expr.index:
                 self._infer_expression(expr.index, env)
-            if arr_type.kind == TypeKind.ARRAY and arr_type.element_type:
+            if arr_type.kind == TypeKind.STRING:
+                expr.inferred_type = IRType.string_type()
+            elif arr_type.kind == TypeKind.ARRAY and arr_type.element_type:
                 expr.inferred_type = arr_type.element_type
             else:
                 expr.inferred_type = IRType.int_type()
