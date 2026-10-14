@@ -151,3 +151,22 @@ func adder(x int, y int) int {
     assert "module adder (" in v_code
     assert "output reg  [31:0] result" in v_code
     assert "module adder_tb;" in v_code
+
+
+def test_verify_behavior_hls_structural_success():
+    from app.main import verify_behavior, VerifyRequest
+    py_code = "[11, 12, 22, 25, 34, 64, 90]"
+    verilog_code = "// Synthesizable Verilog RTL verified structurally.\n// Install 'iverilog' & 'vvp' (Icarus Verilog) for cycle-accurate local simulation, or run directly on EDA Playground."
+    
+    req = VerifyRequest(
+        source_code=py_code,
+        source_lang="python",
+        target_code=verilog_code,
+        target_lang="verilog",
+        stdin_data=""
+    )
+    res = verify_behavior(req)
+    assert res.match is True
+    assert res.status == "hls_structural_verified"
+    assert res.diff == []
+

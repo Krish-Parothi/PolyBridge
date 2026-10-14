@@ -185,7 +185,7 @@ class CodeRunner:
                 capture_output=True,
                 text=True,
                 env=env,
-                timeout=cls.TIMEOUT_SECONDS
+                timeout=max(cls.TIMEOUT_SECONDS, 15)
             )
             if build_res.returncode != 0:
                 duration = (time.perf_counter() - start_time) * 1000

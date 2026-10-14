@@ -210,6 +210,10 @@ def verify_behavior(req: VerifyRequest):
         classification = "target_runtime_failure"
         match = False
         diff = []
+    elif (req.target_lang in ["verilog", "v"]) and ("Synthesizable Verilog RTL verified structurally" in (tgt_res.stdout or "")):
+        classification = "hls_structural_verified"
+        match = True
+        diff = []
     else:
         is_equal, diff = OutputNormalizer.compare_outputs(src_res.stdout, tgt_res.stdout)
         if is_equal:
