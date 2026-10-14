@@ -135,8 +135,26 @@ class CodeRunner:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     @classmethod
+    def get_go_binary(cls) -> Optional[str]:
+        go_path = shutil.which("go")
+        if go_path:
+            return go_path
+        candidates = [
+            r"C:\Program Files\Go\bin\go.exe",
+            r"C:\Go\bin\go.exe",
+            os.path.expanduser(r"~\go\bin\go.exe"),
+            os.path.expanduser(r"~\AppData\Local\Programs\Go\bin\go.exe")
+        ]
+        for c in candidates:
+            if os.path.isfile(c):
+                return c
+        return None
+
+    @classmethod
     def _run_go(cls, code: str, stdin_data: str) -> ExecutionResult:
-        if not shutil.which("go"):
+        start_time = time.perf_counter()
+        go_bin = cls.get_go_binary()
+        if not go_bin:
             return ExecutionResult(
                 "",
                 "Go compiler ('go') not found in PATH on this system. Please install Go to execute Go programs locally.",
@@ -146,20 +164,25 @@ class CodeRunner:
                 "runtime_unavailable"
             )
 
-        start_time = time.perf_counter()
         temp_dir = tempfile.mkdtemp(prefix="pb_go_")
         try:
             go_file = os.path.join(temp_dir, "main.go")
             with open(go_file, "w", encoding="utf-8") as f:
                 f.write(code)
 
+            env = os.environ.copy()
+            go_dir = os.path.dirname(go_bin)
+            if go_dir not in env.get("PATH", ""):
+                env["PATH"] = f"{go_dir};{env.get('PATH', '')}"
+
             # Build first to distinguish compilation errors from runtime errors
             bin_name = "solution.exe" if os.name == "nt" else "solution"
             build_res = subprocess.run(
-                ["go", "build", "-o", bin_name, "main.go"],
+                [go_bin, "build", "-o", bin_name, "main.go"],
                 cwd=temp_dir,
                 capture_output=True,
                 text=True,
+                env=env,
                 timeout=cls.TIMEOUT_SECONDS
             )
             if build_res.returncode != 0:
@@ -174,6 +197,7 @@ class CodeRunner:
                 input=stdin_data,
                 capture_output=True,
                 text=True,
+                env=env,
                 timeout=cls.TIMEOUT_SECONDS
             )
             duration = (time.perf_counter() - start_time) * 1000
