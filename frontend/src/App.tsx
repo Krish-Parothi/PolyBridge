@@ -16,6 +16,8 @@ import {
   RotateCcw,
   Cpu,
   Clock,
+  Download,
+  ExternalLink,
 } from 'lucide-react';
 import { IRTreeViewer } from './components/IRTreeViewer';
 import type { TreeNode } from './components/IRTreeViewer';
@@ -331,12 +333,25 @@ export const App: React.FC = () => {
     setTimeout(() => setCopiedTarget(false), 2000);
   };
 
+  const handleDownloadIno = () => {
+    if (!targetCode) return;
+    const blob = new Blob([targetCode], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'sketch.ino';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const getMonacoLang = (lang: string) => {
     if (lang === 'python') return 'python';
     if (lang === 'javascript') return 'javascript';
     if (lang === 'java') return 'java';
     if (lang === 'go') return 'go';
-    if (lang === 'cpp') return 'cpp';
+    if (lang === 'cpp' || lang === 'arduino') return 'cpp';
     if (lang === 'verilog') return 'systemverilog';
     return 'plaintext';
   };
@@ -827,6 +842,7 @@ export const App: React.FC = () => {
                 <option value="go">Go 1.21</option>
                 <option value="cpp">C++ 20</option>
                 <option value="verilog">Verilog 2001 (HDL)</option>
+                <option value="arduino">Arduino C++ (.ino)</option>
               </select>
             </div>
 
@@ -902,6 +918,55 @@ export const App: React.FC = () => {
                   >
                     <Clock size={11} /> Waveform
                   </button>
+                </div>
+              )}
+
+              {targetLang === 'arduino' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    onClick={handleDownloadIno}
+                    disabled={!targetCode}
+                    title="Download ready-to-flash Arduino sketch (.ino)"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      background: 'rgba(6, 182, 212, 0.1)',
+                      border: '1px solid rgba(6, 182, 212, 0.3)',
+                      borderRadius: 'var(--radius-xs)',
+                      padding: '2px 8px',
+                      color: '#06b6d4',
+                      fontSize: 10.5,
+                      fontFamily: 'var(--font-mono)',
+                      fontWeight: 600,
+                      cursor: targetCode ? 'pointer' : 'default',
+                      opacity: targetCode ? 1 : 0.5,
+                    }}
+                  >
+                    <Download size={11} /> Download .ino
+                  </button>
+
+                  <a
+                    href="https://wokwi.com/projects/new/arduino-uno"
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Simulate online in Wokwi (Virtual Arduino Uno)"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      background: 'var(--bg-surface)',
+                      border: '1px solid var(--border-default)',
+                      borderRadius: 'var(--radius-xs)',
+                      padding: '2px 8px',
+                      color: 'var(--text-secondary)',
+                      fontSize: 10.5,
+                      fontFamily: 'var(--font-mono)',
+                      textDecoration: 'none',
+                    }}
+                  >
+                    <ExternalLink size={11} /> Wokwi Simulator
+                  </a>
                 </div>
               )}
 
