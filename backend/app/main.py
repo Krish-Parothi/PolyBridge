@@ -15,6 +15,7 @@ from app.emitters.java_emitter import JavaEmitter
 from app.emitters.go_emitter import GoEmitter
 from app.emitters.cpp_emitter import CppEmitter
 from app.emitters.verilog_emitter import VerilogEmitter
+from app.emitters.arduino_emitter import ArduinoEmitter
 
 from app.ir.type_infer import TypeInferrer
 from app.validator import ScopeValidator
@@ -50,7 +51,8 @@ EMITTERS = {
     "java": JavaEmitter(),
     "go": GoEmitter(),
     "cpp": CppEmitter(),
-    "verilog": VerilogEmitter()
+    "verilog": VerilogEmitter(),
+    "arduino": ArduinoEmitter()
 }
 
 # Request / Response Models
@@ -58,7 +60,7 @@ EMITTERS = {
 class TranspileRequest(BaseModel):
     source_code: str
     source_lang: str = Field(..., description="python | javascript | java | go")
-    target_lang: str = Field(..., description="python | javascript | java | go | cpp | verilog")
+    target_lang: str = Field(..., description="python | javascript | java | go | cpp | verilog | arduino")
 
 class TranspileResponse(BaseModel):
     success: bool
@@ -102,7 +104,8 @@ def health_check():
             "javascript": bool(shutil.which("node")),
             "java": bool(shutil.which("javac") and shutil.which("java")),
             "go": bool(CodeRunner.get_go_binary()),
-            "verilog": bool(shutil.which("iverilog"))
+            "verilog": bool(shutil.which("iverilog")),
+            "arduino": bool(shutil.which("g++") or shutil.which("arduino-cli"))
         }
     }
 
