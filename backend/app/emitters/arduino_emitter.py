@@ -212,6 +212,24 @@ class ArduinoEmitter:
 
         elif isinstance(stmt, Assignment):
             target_str = self._emit_expr(stmt.target)
+            if isinstance(stmt.target, Identifier) and stmt.target.name not in self.declared_vars:
+                self.declared_vars.add(stmt.target.name)
+                val_str = self._emit_expr(stmt.value)
+                if isinstance(stmt.value, ArrayLiteral):
+                    t_str = "std::vector<int>"
+                    self.var_types[stmt.target.name] = t_str
+                    return [f"{ind}{t_str} {target_str} = {val_str};"]
+                elif stmt.target.inferred_type:
+                    t_str = self._to_arduino_type(stmt.target.inferred_type)
+                    self.var_types[stmt.target.name] = t_str
+                    return [f"{ind}{t_str} {target_str} = {val_str};"]
+                elif stmt.value and stmt.value.inferred_type:
+                    t_str = self._to_arduino_type(stmt.value.inferred_type)
+                    self.var_types[stmt.target.name] = t_str
+                    return [f"{ind}{t_str} {target_str} = {val_str};"]
+                else:
+                    return [f"{ind}auto {target_str} = {val_str};"]
+
             val_str = self._emit_expr(stmt.value)
             return [f"{ind}{target_str} = {val_str};"]
 

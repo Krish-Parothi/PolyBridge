@@ -90,3 +90,34 @@ def test_arduino_api_endpoints():
     vres = verify_behavior(vreq)
     assert vres.match is True
     assert vres.status == "verified_match"
+
+def test_user_bubble_sort_execution():
+    py_code = """def bubble_sort(arr):
+    n = len(arr)
+    for i in range(n):
+        for j in range(0, n - i - 1):
+            if arr[j] > arr[j + 1]:
+                temp = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = temp
+    return arr
+
+a = [64, 34, 25, 12, 22, 11, 90]
+res = bubble_sort(a)
+print(res)
+"""
+    req = TranspileRequest(source_code=py_code, source_lang="python", target_lang="arduino")
+    res = transpile(req)
+    assert res.success is True
+
+    vreq = VerifyRequest(
+        source_code=py_code,
+        source_lang="python",
+        target_code=res.target_code,
+        target_lang="arduino",
+        stdin_data=""
+    )
+    vres = verify_behavior(vreq)
+    assert vres.match is True
+    assert vres.status == "verified_match"
+
