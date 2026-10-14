@@ -1,27 +1,106 @@
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
+/* PolyBridge Compiler Workbench — Professional Design System */
 
 :root {
-  --bg-darkest: #07090e;
-  --bg-darker: #0d111a;
-  --bg-card: #121826;
-  --bg-card-hover: #182032;
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-focus: rgba(99, 102, 241, 0.4);
+  /* Typography */
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', 'Iosevka', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-ir: 'IBM Plex Mono', 'JetBrains Mono', monospace;
+
+  /* Color Palette — Light Mode (Default) */
+  --bg-app: #f4f6f8;
+  --bg-surface: #ffffff;
+  --bg-subtle: #eaedf1;
+  --bg-subtle-hover: #e2e6eb;
+  --bg-muted: #e5e9ee;
   
-  --accent-primary: #6366f1;
-  --accent-primary-hover: #4f46e5;
-  --accent-cyan: #06b6d4;
-  --accent-emerald: #10b981;
-  --accent-amber: #f59e0b;
-  --accent-rose: #f43f5e;
-  --accent-violet: #8b5cf6;
+  --border-default: #d0d7de;
+  --border-subtle: #e1e4e8;
+  --border-strong: #afb8c1;
 
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-primary: #1f2328;
+  --text-secondary: #57606a;
+  --text-muted: #8c959f;
+  --text-inverse: #ffffff;
 
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  /* Accent — Cobalt Blue */
+  --accent: #0969da;
+  --accent-hover: #0854ad;
+  --accent-subtle: #edf5fd;
+  --accent-border: #80bfff;
+  --accent-text: #0969da;
+
+  /* Status Colors */
+  --color-success: #1a7f37;
+  --color-success-bg: #f0fdf4;
+  --color-success-border: #85e89d;
+
+  --color-error: #cf222e;
+  --color-error-bg: #fff5f5;
+  --color-error-border: #ffaba8;
+
+  --color-warning: #9a6700;
+  --color-warning-bg: #fff8c5;
+  --color-warning-border: #eac54f;
+
+  /* Terminal & Diff */
+  --term-bg: #1e2329;
+  --term-header-bg: #161a1f;
+  --term-text: #e6edf3;
+  --term-text-muted: #8b949e;
+
+  /* Shadows — Restrained, subtle elevation */
+  --shadow-sm: 0 1px 2px rgba(27, 31, 36, 0.04);
+  --shadow-md: 0 3px 6px rgba(27, 31, 36, 0.08);
+
+  /* Radius — Crisp, purposeful corners */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+/* Dark Theme Support */
+[data-theme="dark"] {
+  --bg-app: #0d1117;
+  --bg-surface: #161b22;
+  --bg-subtle: #21262d;
+  --bg-subtle-hover: #2b323c;
+  --bg-muted: #2d333b;
+
+  --border-default: #30363d;
+  --border-subtle: #21262d;
+  --border-strong: #484f58;
+
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #6e7681;
+  --text-inverse: #ffffff;
+
+  --accent: #2f81f7;
+  --accent-hover: #388bfd;
+  --accent-subtle: #0d2847;
+  --accent-border: #1f6feb;
+  --accent-text: #58a6ff;
+
+  --color-success: #3fb950;
+  --color-success-bg: #0e2a18;
+  --color-success-border: #238636;
+
+  --color-error: #f85149;
+  --color-error-bg: #2b1114;
+  --color-error-border: #da3633;
+
+  --color-warning: #d29922;
+  --color-warning-bg: #271f0c;
+  --color-warning-border: #9e6a03;
+
+  --term-bg: #0d1117;
+  --term-header-bg: #161b22;
+  --term-text: #e6edf3;
+  --term-text-muted: #8b949e;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 3px 6px rgba(0, 0, 0, 0.35);
 }
 
 * {
@@ -33,11 +112,12 @@
 html, body {
   width: 100%;
   height: 100%;
-  background-color: var(--bg-darkest);
+  background-color: var(--bg-app);
   color: var(--text-primary);
   font-family: var(--font-sans);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
@@ -46,105 +126,101 @@ html, body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background-color: var(--bg-app);
 }
 
-/* Scrollbars */
+/* Scrollbars — Engineered, narrow */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-darker);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #242f47;
-  border-radius: 3px;
+  background: var(--border-default);
+  border-radius: var(--radius-xs);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: var(--text-muted);
 }
 
-/* Custom Tree visualization CSS */
-.tree-node-circle {
-  transition: all 0.2s ease-in-out;
-  cursor: pointer;
+/* Common UI Elements */
+button, select, input {
+  font-family: inherit;
 }
 
-.tree-node-circle:hover {
-  filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.8));
-  transform: scale(1.1);
+/* Subtle focus indicators */
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
-.tree-node-text {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  fill: #e2e8f0;
-  pointer-events: none;
-}
-
-.tree-node-subtext {
-  font-family: var(--font-sans);
-  font-size: 9px;
-  fill: #94a3b8;
-  pointer-events: none;
-}
-
-.tree-link {
-  fill: none;
-  stroke: #25334e;
-  stroke-width: 1.5;
-  transition: all 0.3s ease;
-}
-
-.tree-link:hover {
-  stroke: #6366f1;
-  stroke-width: 2;
-}
-
-/* Animations */
-@keyframes pulse-glow {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* Badges */
+/* Restrained Status Badges */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
-  border-radius: 9999px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
   font-size: 11px;
+  font-family: var(--font-mono);
   font-weight: 500;
-}
-
-.badge-success {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.3);
-}
-
-.badge-error {
-  background: rgba(244, 63, 94, 0.15);
-  color: #fb7185;
-  border: 1px solid rgba(244, 63, 94, 0.3);
+  line-height: 1.2;
 }
 
 .badge-info {
-  background: rgba(99, 102, 241, 0.15);
-  color: #818cf8;
-  border: 1px solid rgba(99, 102, 241, 0.3);
+  background: var(--accent-subtle);
+  color: var(--accent-text);
+  border: 1px solid var(--accent-border);
+}
+
+.badge-success {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid var(--color-success-border);
+}
+
+.badge-error {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  border: 1px solid var(--color-error-border);
 }
 
 .badge-warning {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning-border);
+}
+
+.badge-neutral {
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+
+/* Tree visualization connectors & labels */
+.tree-link {
+  fill: none;
+  stroke: var(--border-default);
+  stroke-width: 1.2;
+}
+
+.tree-node-card {
+  transition: border-color 0.15s ease, filter 0.15s ease;
+  cursor: pointer;
+}
+
+.tree-node-card:hover {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.08));
+}
+
+.tree-node-card.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
