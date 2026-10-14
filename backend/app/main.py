@@ -97,7 +97,7 @@ def health_check():
             "python": bool(shutil.which("python")),
             "javascript": bool(shutil.which("node")),
             "java": bool(shutil.which("javac") and shutil.which("java")),
-            "go": bool(shutil.which("go"))
+            "go": bool(CodeRunner.get_go_binary())
         }
     }
 

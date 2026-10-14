@@ -117,10 +117,26 @@ class CodeRunner:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     @classmethod
+    def get_go_binary(cls) -> Optional[str]:
+        go_path = shutil.which("go")
+        if go_path:
+            return go_path
+        candidates = [
+            r"C:\Program Files\Go\bin\go.exe",
+            r"C:\Go\bin\go.exe",
+            os.path.expanduser(r"~\go\bin\go.exe"),
+            os.path.expanduser(r"~\AppData\Local\Programs\Go\bin\go.exe")
+        ]
+        for c in candidates:
+            if os.path.isfile(c):
+                return c
+        return None
+
+    @classmethod
     def _run_go(cls, code: str, stdin_data: str) -> ExecutionResult:
         start_time = time.perf_counter()
-        # Check if go command exists
-        if not shutil.which("go"):
+        go_bin = cls.get_go_binary()
+        if not go_bin:
             return ExecutionResult(
                 "",
                 "Go compiler ('go') not found in PATH on this system. Please install Go to execute Go programs locally.",
@@ -135,12 +151,18 @@ class CodeRunner:
             with open(go_file, "w", encoding="utf-8") as f:
                 f.write(code)
 
+            env = os.environ.copy()
+            go_dir = os.path.dirname(go_bin)
+            if go_dir not in env.get("PATH", ""):
+                env["PATH"] = f"{go_dir};{env.get('PATH', '')}"
+
             run_res = subprocess.run(
-                ["go", "run", "main.go"],
+                [go_bin, "run", "main.go"],
                 cwd=temp_dir,
                 input=stdin_data,
                 capture_output=True,
                 text=True,
+                env=env,
                 timeout=cls.TIMEOUT_SECONDS
             )
             duration = (time.perf_counter() - start_time) * 1000

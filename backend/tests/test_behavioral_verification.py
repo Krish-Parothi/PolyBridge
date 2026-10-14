@@ -66,3 +66,37 @@ print(calc_sum(10))
 
     is_equal, diff = OutputNormalizer.compare_outputs(py_res.stdout, java_res.stdout)
     assert is_equal, f"Outputs did not match! Diff: {diff}"
+
+def test_python_to_go_behavioral_equivalence():
+    from app.emitters.go_emitter import GoEmitter
+
+    py_code = """def bubble_sort(arr):
+    n = len(arr)
+    for i in range(n):
+        for j in range(0, n - i - 1):
+            if arr[j] > arr[j + 1]:
+                temp = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = temp
+    return arr
+
+a = [64, 34, 25, 12, 22, 11, 90]
+res = bubble_sort(a)
+print(res)
+"""
+    parser = PythonParser()
+    ir = parser.parse(py_code)
+    inferrer = TypeInferrer()
+    ir = inferrer.infer_program(ir)
+
+    go_emitter = GoEmitter()
+    go_code = go_emitter.emit(ir)
+
+    py_res = CodeRunner.run_code(py_code, "python")
+    assert py_res.exit_code == 0
+
+    go_res = CodeRunner.run_code(go_code, "go")
+    assert go_res.exit_code == 0, f"Go compilation/run error: {go_res.stderr}"
+
+    is_equal, diff = OutputNormalizer.compare_outputs(py_res.stdout, go_res.stdout)
+    assert is_equal, f"Outputs did not match! Diff: {diff}"
