@@ -7,7 +7,7 @@ from app.ir.nodes import (
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
         ReturnStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
-        FunctionCall, IRType, TypeKind
+        FunctionCall, IRType, TypeKind, ImportStmt
     )
 
 class PythonParser:
@@ -22,18 +22,64 @@ class PythonParser:
 
         functions: List[FunctionDef] = []
         global_statements: List[Statement] = []
+        imports: List[ImportStmt] = []
 
         for child in root.children:
             if child.type == "function_definition":
                 fn = self._parse_function(child, code_bytes)
                 if fn:
                     functions.append(fn)
+            elif child.type == "class_definition":
+                body = child.child_by_field_name("body")
+                if body:
+                    for c in body.children:
+                        if c.type == "function_definition":
+                            fn = self._parse_function(c, code_bytes)
+                            if fn:
+                                fn.params = [p for p in fn.params if p.name != "self"]
+                                functions.append(fn)
+                        else:
+                            stmts = self._parse_statement(c, code_bytes)
+                            if stmts:
+                                global_statements.extend(stmts)
+            elif child.type in ["import_statement", "import_from_statement"]:
+                imp = self._parse_import(child, code_bytes)
+                if imp:
+                    imports.append(imp)
             else:
                 stmts = self._parse_statement(child, code_bytes)
                 if stmts:
                     global_statements.extend(stmts)
 
-        return Program(functions=functions, global_statements=global_statements)
+        return Program(functions=functions, global_statements=global_statements, imports=imports)
+
+    def _parse_import(self, node: Node, code_bytes: bytes) -> Optional[ImportStmt]:
+        if node.type == "import_statement":
+            for c in node.children:
+                if c.type == "dotted_name":
+                    return ImportStmt(module=self._get_text(c, code_bytes))
+                elif c.type == "aliased_import":
+                    name_n = c.child_by_field_name("name") or (c.children[0] if len(c.children) > 0 else None)
+                    alias_n = c.child_by_field_name("alias") or (c.children[2] if len(c.children) > 2 else None)
+                    mod_name = self._get_text(name_n, code_bytes) if name_n else ""
+                    alias_name = self._get_text(alias_n, code_bytes) if alias_n else None
+                    return ImportStmt(module=mod_name, alias=alias_name)
+        elif node.type == "import_from_statement":
+            mod_name = ""
+            for c in node.children:
+                if c.type == "dotted_name":
+                    mod_name = self._get_text(c, code_bytes)
+                    break
+            items = []
+            after_import = False
+            for c in node.children:
+                if c.type == "import":
+                    after_import = True
+                    continue
+                if after_import and c.type in ["dotted_name", "identifier"]:
+                    items.append(self._get_text(c, code_bytes))
+            return ImportStmt(module=mod_name, imported_names=items)
+        return None
 
     def _get_text(self, node: Node, code_bytes: bytes) -> str:
         return code_bytes[node.start_byte:node.end_byte].decode("utf-8")
@@ -292,6 +338,13 @@ class PythonParser:
         elif ntype == "call":
             fn_node = node.child_by_field_name("function")
             fn_name = self._get_text(fn_node, code_bytes) if fn_node else ""
+            if fn_node and fn_node.type == "attribute":
+                attr_node = fn_node.child_by_field_name("attribute")
+                obj_node = fn_node.child_by_field_name("object")
+                obj_text = self._get_text(obj_node, code_bytes) if obj_node else ""
+                if attr_node and (obj_text in ["self", "this", "sol", "solution", "Solution"] or obj_text.startswith("Solution(")):
+                    fn_name = self._get_text(attr_node, code_bytes)
+
             args_node = node.child_by_field_name("arguments")
             args: List[Expression] = []
             if args_node:

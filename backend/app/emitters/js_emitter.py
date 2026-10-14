@@ -1,4 +1,4 @@
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Dict
 from app.ir.nodes import (
         Program, FunctionDef, Parameter, Statement, Expression,
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
@@ -6,6 +6,7 @@ from app.ir.nodes import (
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
         FunctionCall, IRType, TypeKind
     )
+from app.libraries.registry import LibraryRegistry
 
 class JavaScriptEmitter:
     """Emits modern ES6 JavaScript code from Universal IR."""
@@ -13,20 +14,39 @@ class JavaScriptEmitter:
     def __init__(self, indent_str: str = "    "):
         self.indent_str = indent_str
         self.declared_vars: Set[str] = set()
+        self.used_imports: Set[str] = set()
+        self.module_aliases: Dict[str, str] = {}
 
     def emit(self, program: Program) -> str:
-        lines: List[str] = []
         self.declared_vars.clear()
+        self.used_imports.clear()
+        self.module_aliases.clear()
+
+        # Collect imported aliases and map module imports
+        for imp in getattr(program, "imports", []):
+            if imp.alias:
+                self.module_aliases[imp.alias] = imp.module
+            for ti in LibraryRegistry.get_target_imports({imp.module}, "javascript"):
+                self.used_imports.add(ti)
+
+        body_lines: List[str] = []
 
         # Emit functions
         for fn in program.functions:
-            lines.extend(self._emit_function(fn))
-            lines.append("")
+            body_lines.extend(self._emit_function(fn))
+            body_lines.append("")
 
         # Emit global statements
         for stmt in program.global_statements:
-            lines.extend(self._emit_statement(stmt, indent_level=0, is_global=True))
+            body_lines.extend(self._emit_statement(stmt, indent_level=0, is_global=True))
 
+        lines: List[str] = []
+        for imp in sorted(self.used_imports):
+            lines.append(imp)
+        if self.used_imports and body_lines:
+            lines.append("")
+
+        lines.extend(body_lines)
         return "\n".join(lines).strip() + "\n"
 
     def _indent(self, level: int) -> str:
@@ -154,7 +174,13 @@ class JavaScriptEmitter:
             return f"{arr_str}.length"
 
         elif isinstance(expr, FunctionCall):
-            args_str = ", ".join(self._emit_expr(a) for a in expr.args)
+            args_strs = [self._emit_expr(a) for a in expr.args]
+            translated, req_import = LibraryRegistry.resolve_call(expr.name, args_strs, "javascript", self.module_aliases)
+            if req_import:
+                self.used_imports.add(req_import)
+            if translated:
+                return translated
+            args_str = ", ".join(args_strs)
             return f"{expr.name}({args_str})"
 
         return ""

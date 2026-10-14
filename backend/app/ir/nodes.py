@@ -257,6 +257,29 @@ class Statement(IRNode):
     pass
 
 @dataclass
+class ImportStmt(Statement):
+    module: str = ""                         # e.g., "math", "pandas", "java.util.ArrayList"
+    alias: Optional[str] = None              # e.g., "pd", "np"
+    imported_names: List[str] = field(default_factory=list) # e.g., ["sqrt", "pow"]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "node": "ImportStmt",
+            "module": self.module,
+            "alias": self.alias,
+            "imported_names": self.imported_names
+        }
+
+    def to_tree_node(self) -> Dict[str, Any]:
+        alias_str = f" as {self.alias}" if self.alias else ""
+        items_str = f" ({', '.join(self.imported_names)})" if self.imported_names else ""
+        return {
+            "name": f"Import: {self.module}{alias_str}{items_str}",
+            "attributes": {"module": self.module},
+            "children": []
+        }
+
+@dataclass
 class VarDecl(Statement):
     name: str = ""
     var_type: IRType = field(default_factory=IRType.unknown)
@@ -529,16 +552,24 @@ class FunctionDef(IRNode):
 class Program(IRNode):
     functions: List[FunctionDef] = field(default_factory=list)
     global_statements: List[Statement] = field(default_factory=list)
+    imports: List[ImportStmt] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "node": "Program",
+            "imports": [i.to_dict() for i in self.imports],
             "functions": [f.to_dict() for f in self.functions],
             "global_statements": [s.to_dict() for s in self.global_statements]
         }
 
     def to_tree_node(self) -> Dict[str, Any]:
         children = []
+        if self.imports:
+            children.append({
+                "name": f"Imports ({len(self.imports)})",
+                "attributes": {},
+                "children": [i.to_tree_node() for i in self.imports]
+            })
         if self.functions:
             children.append({
                 "name": f"Functions ({len(self.functions)})",
@@ -554,6 +585,7 @@ class Program(IRNode):
         return {
             "name": "Program (IR Root)",
             "attributes": {
+                "imports": len(self.imports),
                 "functions": len(self.functions),
                 "statements": len(self.global_statements)
             },

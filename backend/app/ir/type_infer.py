@@ -46,6 +46,10 @@ class TypeInferrer:
             elif fn.return_type.kind == TypeKind.UNKNOWN:
                 fn.return_type = IRType.void_type()
 
+        # Fourth pass: re-infer global statements now that function return types are determined
+        for stmt in program.global_statements:
+            self._infer_statement(stmt, self.global_env)
+
         return program
 
     def _guess_param_type(self, fn: FunctionDef, param_name: str) -> IRType:
@@ -214,6 +218,10 @@ class TypeInferrer:
                 self._infer_expression(a, env)
             if expr.name in self.func_signatures:
                 expr.inferred_type = self.func_signatures[expr.name].return_type
+            elif any(expr.name.lower().endswith(f".{fn}") or expr.name.lower() == fn for fn in ["sqrt", "sin", "cos", "tan", "log", "exp", "pow"]):
+                expr.inferred_type = IRType.float_type()
+            elif any(expr.name.lower().endswith(f".{fn}") or expr.name.lower() == fn for fn in ["floor", "ceil", "round", "abs"]):
+                expr.inferred_type = IRType.int_type()
             else:
                 expr.inferred_type = IRType.unknown()
             return expr.inferred_type
