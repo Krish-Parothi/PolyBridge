@@ -66,6 +66,7 @@ class TranspileResponse(BaseModel):
     ir_tree: Optional[Dict[str, Any]] = None
     diagnostics: List[Dict[str, Any]] = []
     error: Optional[str] = None
+    hls_metadata: Optional[Dict[str, Any]] = None
 
 class VerifyRequest(BaseModel):
     source_code: str
@@ -164,6 +165,10 @@ def transpile(req: TranspileRequest):
         # Export D3 Tree
         ir_tree = program_ir.to_tree_node()
 
+        hls_metadata = None
+        if tgt_lang == "verilog" and isinstance(emitter, VerilogEmitter):
+            hls_metadata = emitter.analyze_hls(program_ir)
+
         return TranspileResponse(
             success=True,
             target_code=target_code,
@@ -171,7 +176,8 @@ def transpile(req: TranspileRequest):
             diagnostics=[
                 {"line": d.line, "column": d.column, "severity": d.severity, "message": d.message}
                 for d in diagnostics
-            ]
+            ],
+            hls_metadata=hls_metadata
         )
 
     except Exception as e:

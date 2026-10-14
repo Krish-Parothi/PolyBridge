@@ -170,3 +170,29 @@ def test_verify_behavior_hls_structural_success():
     assert res.status == "hls_structural_verified"
     assert res.diff == []
 
+
+def test_hls_metadata_schematic_and_timing():
+    from app.main import transpile, TranspileRequest
+    py_code = """
+def gcd(a: int, b: int) -> int:
+    while b != 0:
+        if a > b:
+            a = a - b
+        else:
+            b = b - a
+    return a
+"""
+    req = TranspileRequest(source_code=py_code, source_lang="python", target_lang="verilog")
+    res = transpile(req)
+    assert res.success is True
+    assert res.hls_metadata is not None
+    meta = res.hls_metadata
+    assert meta["module_name"] == "gcd"
+    assert meta["is_sequential"] is True
+    assert "clk" in [p["name"] for p in meta["ports"]]
+    assert "rst" in [p["name"] for p in meta["ports"]]
+    assert "done" in [p["name"] for p in meta["ports"]]
+    assert meta["metrics"]["estimated_luts"] > 0
+    assert len(meta["timing_steps"]) >= 4
+
+
