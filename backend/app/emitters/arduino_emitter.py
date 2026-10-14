@@ -17,6 +17,7 @@ class ArduinoEmitter:
         self.var_types: Dict[str, str] = {}
         self.uses_vectors = False
         self.needs_floor_div = False
+        self.needs_math = False
         self.needs_array_print_helper = False
 
     def emit(self, program: Program) -> str:
@@ -24,6 +25,7 @@ class ArduinoEmitter:
         self.var_types.clear()
         self.uses_vectors = False
         self.needs_floor_div = False
+        self.needs_math = False
         self.needs_array_print_helper = False
 
         # Pre-scan for vector and array print usage
@@ -37,6 +39,8 @@ class ArduinoEmitter:
             body_lines.append("")
 
         # Emit setup()
+        self.declared_vars.clear()
+        self.var_types.clear()
         setup_lines: List[str] = [
             "void setup() {",
             f"{self._indent(1)}Serial.begin({self.default_baud_rate});",
@@ -141,6 +145,8 @@ class ArduinoEmitter:
             "",
             "#include <Arduino.h>"
         ]
+        if self.needs_math:
+            headers.append("#include <math.h>")
         if self.uses_vectors:
             headers.append("#include <initializer_list>")
         headers.append("")
@@ -176,10 +182,18 @@ class ArduinoEmitter:
         return "int"
 
     def _detect_array_usage(self, program: Program):
-        def scan_expr(e: Expression):
-            if isinstance(e, ArrayLiteral):
+        def scan_type(t: Optional[IRType]):
+            if t and t.kind == TypeKind.ARRAY:
                 self.uses_vectors = True
-            elif isinstance(e, BinaryOp):
+
+        def scan_expr(e: Optional[Expression]):
+            if not e:
+                return
+            if isinstance(e, (ArrayLiteral, ArrayAccess, ArrayLength)):
+                self.uses_vectors = True
+            if hasattr(e, "inferred_type"):
+                scan_type(e.inferred_type)
+            if isinstance(e, BinaryOp):
                 scan_expr(e.left)
                 scan_expr(e.right)
             elif isinstance(e, UnaryOp):
@@ -189,11 +203,12 @@ class ArduinoEmitter:
 
         def scan_stmt(s: Statement):
             if isinstance(s, VarDecl):
-                if s.inferred_type and s.inferred_type.kind == TypeKind.ARRAY:
-                    self.uses_vectors = True
+                if hasattr(s, "var_type"):
+                    scan_type(s.var_type)
                 if s.initializer:
                     scan_expr(s.initializer)
             elif isinstance(s, Assignment):
+                scan_expr(s.target)
                 scan_expr(s.value)
             elif isinstance(s, IfStmt):
                 scan_expr(s.condition)
@@ -203,6 +218,9 @@ class ArduinoEmitter:
                 scan_expr(s.condition)
                 for st in s.body: scan_stmt(st)
             elif isinstance(s, ForRangeStmt):
+                scan_expr(s.start)
+                scan_expr(s.end)
+                if s.step: scan_expr(s.step)
                 for st in s.body: scan_stmt(st)
             elif isinstance(s, ReturnStmt) and s.value:
                 scan_expr(s.value)
@@ -212,6 +230,9 @@ class ArduinoEmitter:
                 for a in s.args: scan_expr(a)
 
         for fn in program.functions:
+            scan_type(fn.return_type)
+            for p in fn.params:
+                scan_type(p.param_type)
             for st in fn.body: scan_stmt(st)
         for st in program.global_statements: scan_stmt(st)
 
@@ -223,8 +244,8 @@ class ArduinoEmitter:
         )
 
         lines: List[str] = [f"{ret_type} {fn.name}({params_str}) {{"]
-        for p in fn.params:
-            self.declared_vars.add(p.name)
+        self.declared_vars = set(p.name for p in fn.params)
+        self.var_types = {p.name: self._to_arduino_type(p.param_type) if p.param_type else "int" for p in fn.params}
 
         for stmt in fn.body:
             lines.extend(self._emit_statement(stmt, indent_level=1))
@@ -236,18 +257,21 @@ class ArduinoEmitter:
         ind = self._indent(indent_level)
 
         if isinstance(stmt, VarDecl):
-            t_str = self._to_arduino_type(stmt.inferred_type) if stmt.inferred_type else "int"
+            if hasattr(stmt, "var_type") and stmt.var_type and stmt.var_type.kind != TypeKind.UNKNOWN:
+                t_str = self._to_arduino_type(stmt.var_type)
+            elif stmt.initializer and isinstance(stmt.initializer, ArrayLiteral):
+                t_str = "Vector<int>"
+            elif stmt.initializer and hasattr(stmt.initializer, "inferred_type") and stmt.initializer.inferred_type and stmt.initializer.inferred_type.kind != TypeKind.UNKNOWN:
+                t_str = self._to_arduino_type(stmt.initializer.inferred_type)
+            else:
+                t_str = "int"
+
             self.declared_vars.add(stmt.name)
             self.var_types[stmt.name] = t_str
 
             if stmt.initializer is not None:
-                if isinstance(stmt.initializer, ArrayLiteral):
-                    # Direct std::vector initialization or initializer list
-                    init_expr = self._emit_expr(stmt.initializer)
-                    return [f"{ind}{t_str} {stmt.name} = {init_expr};"]
-                else:
-                    init_str = self._emit_expr(stmt.initializer)
-                    return [f"{ind}{t_str} {stmt.name} = {init_str};"]
+                init_str = self._emit_expr(stmt.initializer)
+                return [f"{ind}{t_str} {stmt.name} = {init_str};"]
             return [f"{ind}{t_str} {stmt.name};"]
 
         elif isinstance(stmt, Assignment):
@@ -259,16 +283,16 @@ class ArduinoEmitter:
                     t_str = "Vector<int>"
                     self.var_types[stmt.target.name] = t_str
                     return [f"{ind}{t_str} {target_str} = {val_str};"]
-                elif stmt.target.inferred_type:
+                elif hasattr(stmt.target, "inferred_type") and stmt.target.inferred_type and stmt.target.inferred_type.kind != TypeKind.UNKNOWN:
                     t_str = self._to_arduino_type(stmt.target.inferred_type)
                     self.var_types[stmt.target.name] = t_str
                     return [f"{ind}{t_str} {target_str} = {val_str};"]
-                elif stmt.value and stmt.value.inferred_type:
+                elif stmt.value and hasattr(stmt.value, "inferred_type") and stmt.value.inferred_type and stmt.value.inferred_type.kind != TypeKind.UNKNOWN:
                     t_str = self._to_arduino_type(stmt.value.inferred_type)
                     self.var_types[stmt.target.name] = t_str
                     return [f"{ind}{t_str} {target_str} = {val_str};"]
                 else:
-                    return [f"{ind}auto {target_str} = {val_str};"]
+                    return [f"{ind}int {target_str} = {val_str};"]
 
             val_str = self._emit_expr(stmt.value)
             return [f"{ind}{target_str} = {val_str};"]
@@ -353,6 +377,10 @@ class ArduinoEmitter:
             if op == "//":
                 self.needs_floor_div = True
                 return f"floorDiv({left_str}, {right_str})"
+            elif op in ["===", "=="]:
+                op = "=="
+            elif op in ["!==", "!="]:
+                op = "!="
             elif op == "and":
                 op = "&&"
             elif op == "or":
@@ -381,6 +409,18 @@ class ArduinoEmitter:
         elif isinstance(expr, FunctionCall):
             name = expr.name
             args_str = ", ".join(self._emit_expr(a) for a in expr.args)
+            if name in ["Math.floor", "floor"]:
+                self.needs_math = True
+                return f"(int)floor({args_str})"
+            elif name in ["Math.ceil", "ceil"]:
+                self.needs_math = True
+                return f"(int)ceil({args_str})"
+            elif name in ["Math.abs", "abs"]:
+                return f"abs({args_str})"
+            elif name in ["Math.min", "min"]:
+                return f"min({args_str})"
+            elif name in ["Math.max", "max"]:
+                return f"max({args_str})"
             return f"{name}({args_str})"
 
         return "0"

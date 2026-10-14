@@ -122,3 +122,27 @@ print(res)
     assert vres.match is True
     assert vres.status == "verified_match"
 
+@pytest.mark.parametrize("algo_name", ["bubble_sort", "fibonacci", "binary_search"])
+@pytest.mark.parametrize("src_lang", ["python", "javascript", "java", "go"])
+def test_all_algorithms_to_arduino(algo_name, src_lang):
+    from tests.test_algorithm_matrix import ALGORITHMS
+    from app.parsers.java_parser import JavaParser
+    from app.parsers.go_parser import GoParser
+
+    parsers = {
+        "python": PythonParser(),
+        "javascript": JavaScriptParser(),
+        "java": JavaParser(),
+        "go": GoParser()
+    }
+    src_code = ALGORITHMS[algo_name][src_lang]
+    prog = parsers[src_lang].parse(src_code)
+    inferrer = TypeInferrer()
+    prog = inferrer.infer_program(prog)
+    emitter = ArduinoEmitter()
+    ino = emitter.emit(prog)
+
+    res = CodeRunner.run_code(ino, "arduino")
+    assert res.exit_code == 0, f"Failed on {algo_name} from {src_lang}: {res.stderr}"
+    assert len(res.stdout.strip()) > 0
+
