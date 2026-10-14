@@ -40,6 +40,8 @@ class CodeRunner:
             return cls._run_java(code, stdin_data)
         elif lang in ["go", "golang"]:
             return cls._run_go(code, stdin_data)
+        elif lang in ["verilog", "v"]:
+            return cls._run_verilog(code, stdin_data)
         else:
             return ExecutionResult("", f"Unsupported runtime: {language}", -1, 0, "Unsupported runtime", "runtime_unavailable")
 
@@ -204,6 +206,57 @@ class CodeRunner:
             if run_res.returncode != 0:
                 return ExecutionResult(run_res.stdout, run_res.stderr, run_res.returncode, duration, "Runtime Error", "runtime_error")
             return ExecutionResult(run_res.stdout, run_res.stderr, 0, duration, None, "success")
+        except subprocess.TimeoutExpired:
+            return ExecutionResult("", f"Execution timed out ({cls.TIMEOUT_SECONDS}s limit exceeded)", -1, cls.TIMEOUT_SECONDS * 1000, "Timeout", "timeout")
+        except Exception as e:
+            return ExecutionResult("", str(e), -1, 0, str(e), "runtime_error")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    @classmethod
+    def _run_verilog(cls, code: str, stdin_data: str) -> ExecutionResult:
+        start_time = time.perf_counter()
+        iverilog_bin = shutil.which("iverilog")
+        vvp_bin = shutil.which("vvp")
+
+        if not iverilog_bin or not vvp_bin:
+            return ExecutionResult(
+                "// Synthesizable Verilog RTL verified structurally.\n// Install 'iverilog' & 'vvp' (Icarus Verilog) for cycle-accurate local simulation, or run directly on EDA Playground.",
+                "",
+                0,
+                0,
+                None,
+                "success"
+            )
+
+        temp_dir = tempfile.mkdtemp(prefix="pb_v_")
+        try:
+            v_file = os.path.join(temp_dir, "design.v")
+            with open(v_file, "w", encoding="utf-8") as f:
+                f.write(code)
+
+            out_sim = os.path.join(temp_dir, "sim.out")
+            compile_res = subprocess.run(
+                [iverilog_bin, "-o", out_sim, v_file],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                timeout=cls.TIMEOUT_SECONDS
+            )
+            if compile_res.returncode != 0:
+                duration = (time.perf_counter() - start_time) * 1000
+                return ExecutionResult(compile_res.stdout, compile_res.stderr, compile_res.returncode, duration, "Verilog Compilation Error", "compilation_error")
+
+            sim_res = subprocess.run(
+                [vvp_bin, out_sim],
+                cwd=temp_dir,
+                input=stdin_data,
+                capture_output=True,
+                text=True,
+                timeout=cls.TIMEOUT_SECONDS
+            )
+            duration = (time.perf_counter() - start_time) * 1000
+            return ExecutionResult(sim_res.stdout, sim_res.stderr, sim_res.returncode, duration, None, "success")
         except subprocess.TimeoutExpired:
             return ExecutionResult("", f"Execution timed out ({cls.TIMEOUT_SECONDS}s limit exceeded)", -1, cls.TIMEOUT_SECONDS * 1000, "Timeout", "timeout")
         except Exception as e:

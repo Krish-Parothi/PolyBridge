@@ -323,6 +323,7 @@ export const App: React.FC = () => {
     if (lang === 'java') return 'java';
     if (lang === 'go') return 'go';
     if (lang === 'cpp') return 'cpp';
+    if (lang === 'verilog') return 'systemverilog';
     return 'plaintext';
   };
 
@@ -811,6 +812,7 @@ export const App: React.FC = () => {
                 <option value="java">Java 17</option>
                 <option value="go">Go 1.21</option>
                 <option value="cpp">C++ 20</option>
+                <option value="verilog">Verilog 2001 (HDL)</option>
               </select>
             </div>
 

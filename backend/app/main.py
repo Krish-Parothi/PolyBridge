@@ -14,6 +14,7 @@ from app.emitters.js_emitter import JavaScriptEmitter
 from app.emitters.java_emitter import JavaEmitter
 from app.emitters.go_emitter import GoEmitter
 from app.emitters.cpp_emitter import CppEmitter
+from app.emitters.verilog_emitter import VerilogEmitter
 
 from app.ir.type_infer import TypeInferrer
 from app.validator import ScopeValidator
@@ -48,7 +49,8 @@ EMITTERS = {
     "javascript": JavaScriptEmitter(),
     "java": JavaEmitter(),
     "go": GoEmitter(),
-    "cpp": CppEmitter()
+    "cpp": CppEmitter(),
+    "verilog": VerilogEmitter()
 }
 
 # Request / Response Models
@@ -56,7 +58,7 @@ EMITTERS = {
 class TranspileRequest(BaseModel):
     source_code: str
     source_lang: str = Field(..., description="python | javascript | java | go")
-    target_lang: str = Field(..., description="python | javascript | java | go | cpp")
+    target_lang: str = Field(..., description="python | javascript | java | go | cpp | verilog")
 
 class TranspileResponse(BaseModel):
     success: bool
@@ -87,7 +89,7 @@ def read_root():
         "project": "PolyBridge",
         "description": "Scoped Multi-Language Transpiler & Behavioral Verification",
         "status": "online",
-        "supported_languages": ["python", "javascript", "java", "go"]
+        "supported_languages": ["python", "javascript", "java", "go", "cpp", "verilog"]
     }
 
 @app.get("/api/health")
@@ -98,7 +100,8 @@ def health_check():
             "python": bool(shutil.which("python")),
             "javascript": bool(shutil.which("node")),
             "java": bool(shutil.which("javac") and shutil.which("java")),
-            "go": bool(CodeRunner.get_go_binary())
+            "go": bool(CodeRunner.get_go_binary()),
+            "verilog": bool(shutil.which("iverilog"))
         }
     }
 
