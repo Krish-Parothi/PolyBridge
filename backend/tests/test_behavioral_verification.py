@@ -68,6 +68,8 @@ print(calc_sum(10))
     assert is_equal, f"Outputs did not match! Diff: {diff}"
 
 def test_python_to_go_behavioral_equivalence():
+    if not CodeRunner.get_go_binary():
+        pytest.skip("Go compiler not installed on host")
     from app.emitters.go_emitter import GoEmitter
 
     py_code = """def bubble_sort(arr):

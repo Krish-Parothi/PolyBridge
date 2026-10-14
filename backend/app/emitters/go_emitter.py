@@ -16,11 +16,13 @@ class GoEmitter:
         self.declared_vars: Set[str] = set()
         self.used_imports: Set[str] = set()
         self.module_aliases: Dict[str, str] = {}
+        self.needs_floor_div = False
 
     def emit(self, program: Program) -> str:
         self.declared_vars.clear()
         self.used_imports = {'"fmt"'}
         self.module_aliases.clear()
+        self.needs_floor_div = False
 
         # Collect imported aliases and map module imports
         for imp in getattr(program, "imports", []):
@@ -41,6 +43,20 @@ class GoEmitter:
         for stmt in program.global_statements:
             main_lines.extend(self._emit_statement(stmt, indent_level=1))
         main_lines.append("}")
+
+        if self.needs_floor_div:
+            floor_div_func = [
+                "func floorDiv(a, b int) int {",
+                f"{self.indent_str}d := a / b",
+                f"{self.indent_str}r := a % b",
+                f"{self.indent_str}if (r != 0) && ((r < 0) != (b < 0)) {{",
+                f"{self.indent_str}{self.indent_str}d--",
+                f"{self.indent_str}}}",
+                f"{self.indent_str}return d",
+                "}",
+                ""
+            ]
+            body_lines = floor_div_func + body_lines
 
         lines: List[str] = ["package main", ""]
         if len(self.used_imports) == 1:
@@ -221,7 +237,8 @@ class GoEmitter:
             elif op == "or":
                 op = "||"
             elif op == "//":
-                op = "/"
+                self.needs_floor_div = True
+                return f"floorDiv({left_str}, {right_str})"
             elif op == "===":
                 op = "=="
             elif op == "!==":

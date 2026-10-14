@@ -10,12 +10,14 @@ import {
 
 export interface VerificationResult {
   match: boolean;
+  status?: string;
   source_result: {
     stdout: string;
     stderr: string;
     exit_code: number;
     duration_ms: number;
     error?: string | null;
+    status?: string;
   };
   target_result: {
     stdout: string;
@@ -23,6 +25,7 @@ export interface VerificationResult {
     exit_code: number;
     duration_ms: number;
     error?: string | null;
+    status?: string;
   };
   diff: string[];
   normalized_source: string;
@@ -205,12 +208,21 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
     );
   }
 
-  // Missing Runtime Warning
-  const targetError = result?.target_result?.error;
+  // Status Classification
+  const status = result?.status;
   const isTargetRuntimeMissing =
-    targetError === 'Go compiler not found' ||
+    status === 'runtime_unavailable' ||
+    result?.target_result?.error === 'Go compiler not found' ||
     result?.target_result?.stderr?.includes('Go compiler') ||
-    targetError?.includes('compiler not found');
+    result?.target_result?.error?.includes('compiler not found');
+  const isTargetCompilationError = status === 'target_compilation_failure';
+  const isSourceCompilationError = status === 'source_compilation_failure';
+  const isTargetRuntimeError = status === 'target_runtime_failure';
+  const isSourceRuntimeError = status === 'source_runtime_failure';
+  const isTimeout = status === 'timeout';
+
+  const isWarning = isTargetRuntimeMissing || isTimeout;
+  const isSuccess = result?.match === true;
 
   return (
     <div
@@ -229,14 +241,14 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '6px 14px',
-          background: isTargetRuntimeMissing
+          background: isWarning
             ? 'var(--color-warning-bg)'
-            : result.match
+            : isSuccess
             ? 'var(--color-success-bg)'
             : 'var(--color-error-bg)',
-          borderBottom: isTargetRuntimeMissing
+          borderBottom: isWarning
             ? '1px solid var(--color-warning-border)'
-            : result.match
+            : isSuccess
             ? '1px solid var(--color-success-border)'
             : '1px solid var(--color-error-border)',
           flexShrink: 0,
@@ -260,7 +272,92 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
                 — Transpilation succeeded, but execution engine requires local runtime installation.
               </span>
             </>
-          ) : result.match ? (
+          ) : isTimeout ? (
+            <>
+              <AlertTriangle size={15} style={{ color: 'var(--color-warning)' }} />
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-sans)',
+                  color: 'var(--color-warning)',
+                }}
+              >
+                EXECUTION TIMED OUT
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                — Program execution exceeded safety time limit.
+              </span>
+            </>
+          ) : isTargetCompilationError ? (
+            <>
+              <XCircle size={15} style={{ color: 'var(--color-error)' }} />
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-sans)',
+                  color: 'var(--color-error)',
+                }}
+              >
+                TARGET COMPILATION FAILURE ({targetLang.toUpperCase()})
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                — Emitted code failed target compilation. Inspect compiler diagnostic in stderr below.
+              </span>
+            </>
+          ) : isSourceCompilationError ? (
+            <>
+              <XCircle size={15} style={{ color: 'var(--color-error)' }} />
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-sans)',
+                  color: 'var(--color-error)',
+                }}
+              >
+                SOURCE COMPILATION / SYNTAX ERROR ({sourceLang.toUpperCase()})
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                — Source program failed parse or compilation check.
+              </span>
+            </>
+          ) : isTargetRuntimeError ? (
+            <>
+              <XCircle size={15} style={{ color: 'var(--color-error)' }} />
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-sans)',
+                  color: 'var(--color-error)',
+                }}
+              >
+                TARGET RUNTIME ERROR ({targetLang.toUpperCase()})
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                — Target executable exited with an unhandled runtime error.
+              </span>
+            </>
+          ) : isSourceRuntimeError ? (
+            <>
+              <XCircle size={15} style={{ color: 'var(--color-error)' }} />
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-sans)',
+                  color: 'var(--color-error)',
+                }}
+              >
+                SOURCE RUNTIME ERROR ({sourceLang.toUpperCase()})
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                — Source program crashed with an unhandled runtime error.
+              </span>
+            </>
+          ) : isSuccess ? (
             <>
               <CheckCircle2 size={15} style={{ color: 'var(--color-success)' }} />
               <span

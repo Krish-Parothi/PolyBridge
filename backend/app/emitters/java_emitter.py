@@ -293,7 +293,7 @@ class JavaEmitter:
             elif op == "or":
                 op = "||"
             elif op == "//":
-                op = "/"
+                return f"Math.floorDiv({left_str}, {right_str})"
             elif op == "===":
                 op = "=="
             elif op == "!==":
