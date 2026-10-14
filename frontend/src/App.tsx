@@ -95,6 +95,22 @@ export const App: React.FC = () => {
       .catch(() => setIsBackendOnline(false));
   }, []);
 
+  // Handle Language selection changes - clear previous target code to prevent cross-language execution mismatch
+  const handleSourceLangChange = (newLang: string) => {
+    setSourceLang(newLang);
+    setTargetCode('');
+    setIrTree(null);
+    setVerificationResult(null);
+    setDiagnostics([]);
+  };
+
+  const handleTargetLangChange = (newLang: string) => {
+    setTargetLang(newLang);
+    setTargetCode('');
+    setVerificationResult(null);
+    setDiagnostics([]);
+  };
+
   // Handle Transpile action
   const handleTranspile = useCallback(async () => {
     setIsTranspiling(true);
@@ -595,7 +611,7 @@ export const App: React.FC = () => {
 
               <select
                 value={sourceLang}
-                onChange={(e) => setSourceLang(e.target.value)}
+                onChange={(e) => handleSourceLangChange(e.target.value)}
                 style={{
                   background: 'var(--bg-surface)',
                   color: 'var(--text-primary)',
@@ -776,7 +792,7 @@ export const App: React.FC = () => {
 
               <select
                 value={targetLang}
-                onChange={(e) => setTargetLang(e.target.value)}
+                onChange={(e) => handleTargetLangChange(e.target.value)}
                 style={{
                   background: 'var(--bg-surface)',
                   color: 'var(--text-primary)',
