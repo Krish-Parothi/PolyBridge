@@ -14,11 +14,16 @@ import {
   ChevronDown,
   ChevronUp,
   RotateCcw,
+  Cpu,
+  Clock,
 } from 'lucide-react';
 import { IRTreeViewer } from './components/IRTreeViewer';
 import type { TreeNode } from './components/IRTreeViewer';
 import { VerificationDiff } from './components/VerificationDiff';
 import type { VerificationResult } from './components/VerificationDiff';
+import { CircuitSchematicViewer } from './components/CircuitSchematicViewer';
+import type { HlsMetadata } from './components/CircuitSchematicViewer';
+import { CycleTimingWaveform } from './components/CycleTimingWaveform';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -56,6 +61,8 @@ export const App: React.FC = () => {
   const [sourceCode, setSourceCode] = useState<string>(DEFAULT_PYTHON_CODE);
   const [targetCode, setTargetCode] = useState<string>('');
   const [irTree, setIrTree] = useState<TreeNode | null>(null);
+  const [hlsMetadata, setHlsMetadata] = useState<HlsMetadata | null>(null);
+  const [targetViewMode, setTargetViewMode] = useState<'code' | 'schematic' | 'waveform'>('code');
 
   const [isTranspiling, setIsTranspiling] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -107,7 +114,10 @@ export const App: React.FC = () => {
   const handleTargetLangChange = (newLang: string) => {
     setTargetLang(newLang);
     setTargetCode('');
+    setIrTree(null);
     setVerificationResult(null);
+    setHlsMetadata(null);
+    setTargetViewMode('code');
     setDiagnostics([]);
   };
 
@@ -132,9 +142,11 @@ export const App: React.FC = () => {
       if (data.success) {
         setTargetCode(data.target_code);
         setIrTree(data.ir_tree);
+        setHlsMetadata(data.hls_metadata || null);
         setDiagnostics(data.diagnostics || []);
       } else {
         setTargetCode('');
+        setHlsMetadata(null);
         setDiagnostics(
           data.diagnostics || [
             { line: 1, column: 1, severity: 'error', message: data.error || 'Transpilation failed' },
@@ -174,6 +186,7 @@ export const App: React.FC = () => {
           currentTarget = data.target_code;
           setTargetCode(data.target_code);
           setIrTree(data.ir_tree);
+          setHlsMetadata(data.hls_metadata || null);
         } else {
           setDiagnostics(
             data.diagnostics || [
@@ -246,6 +259,7 @@ export const App: React.FC = () => {
       setTargetCode('');
       setIrTree(null);
       setVerificationResult(null);
+      setHlsMetadata(null);
     }
   };
 
@@ -817,6 +831,80 @@ export const App: React.FC = () => {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {targetLang === 'verilog' && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-default)',
+                    borderRadius: 'var(--radius-xs)',
+                    padding: 2,
+                    gap: 2,
+                  }}
+                >
+                  <button
+                    onClick={() => setTargetViewMode('code')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '2px 7px',
+                      fontSize: 10.5,
+                      fontFamily: 'var(--font-mono)',
+                      fontWeight: targetViewMode === 'code' ? 600 : 500,
+                      borderRadius: 2,
+                      border: 'none',
+                      background: targetViewMode === 'code' ? 'var(--accent)' : 'transparent',
+                      color: targetViewMode === 'code' ? '#ffffff' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Code2 size={11} /> Code
+                  </button>
+
+                  <button
+                    onClick={() => setTargetViewMode('schematic')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '2px 7px',
+                      fontSize: 10.5,
+                      fontFamily: 'var(--font-mono)',
+                      fontWeight: targetViewMode === 'schematic' ? 600 : 500,
+                      borderRadius: 2,
+                      border: 'none',
+                      background: targetViewMode === 'schematic' ? '#0284c7' : 'transparent',
+                      color: targetViewMode === 'schematic' ? '#ffffff' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Cpu size={11} /> RTL Circuit
+                  </button>
+
+                  <button
+                    onClick={() => setTargetViewMode('waveform')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '2px 7px',
+                      fontSize: 10.5,
+                      fontFamily: 'var(--font-mono)',
+                      fontWeight: targetViewMode === 'waveform' ? 600 : 500,
+                      borderRadius: 2,
+                      border: 'none',
+                      background: targetViewMode === 'waveform' ? '#0284c7' : 'transparent',
+                      color: targetViewMode === 'waveform' ? '#ffffff' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Clock size={11} /> Waveform
+                  </button>
+                </div>
+              )}
+
               <button
                 onClick={handleCopyTarget}
                 disabled={!targetCode}
@@ -842,27 +930,33 @@ export const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Target Monaco Editor */}
+          {/* Target Content Area: Monaco Editor OR RTL Circuit Schematic OR Cycle Timing Waveform */}
           <div style={{ flex: 1, minHeight: 0 }}>
-            <Editor
-              height="100%"
-              language={getMonacoLang(targetLang)}
-              theme={monacoTheme}
-              value={targetCode}
-              onChange={(val) => setTargetCode(val || '')}
-              options={{
-                fontSize: 12.5,
-                fontFamily: "'JetBrains Mono', 'IBM Plex Mono', 'Iosevka', monospace",
-                lineHeight: 19,
-                minimap: { enabled: false },
-                lineNumbers: 'on',
-                scrollBeyondLastLine: false,
-                automaticLayout: true,
-                tabSize: 4,
-                padding: { top: 8, bottom: 8 },
-                renderLineHighlight: 'all',
-              }}
-            />
+            {targetLang === 'verilog' && targetViewMode === 'schematic' ? (
+              <CircuitSchematicViewer metadata={hlsMetadata} />
+            ) : targetLang === 'verilog' && targetViewMode === 'waveform' ? (
+              <CycleTimingWaveform metadata={hlsMetadata} />
+            ) : (
+              <Editor
+                height="100%"
+                language={getMonacoLang(targetLang)}
+                theme={monacoTheme}
+                value={targetCode}
+                onChange={(val) => setTargetCode(val || '')}
+                options={{
+                  fontSize: 12.5,
+                  fontFamily: "'JetBrains Mono', 'IBM Plex Mono', 'Iosevka', monospace",
+                  lineHeight: 19,
+                  minimap: { enabled: false },
+                  lineNumbers: 'on',
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  tabSize: 4,
+                  padding: { top: 8, bottom: 8 },
+                  renderLineHighlight: 'all',
+                }}
+              />
+            )}
           </div>
         </div>
       </div>
