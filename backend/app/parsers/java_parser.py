@@ -7,7 +7,8 @@ from app.ir.nodes import (
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
         ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
-        FunctionCall, IRType, TypeKind, ImportStmt
+        FunctionCall, IRType, TypeKind, ImportStmt,
+        ForEachStmt, AugmentedAssignment, DoWhileStmt, TernaryOp, CastExpr
     )
 
 class JavaParser:
@@ -155,6 +156,10 @@ class JavaParser:
                 right_n = expr_n.child_by_field_name("right")
                 target = self._parse_expression(left_n, code_bytes)
                 value = self._parse_expression(right_n, code_bytes)
+                op_n = expr_n.child_by_field_name("operator")
+                op_text = self._get_text(op_n, code_bytes) if op_n else "="
+                if op_text in ["+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="]:
+                    return [AugmentedAssignment(target=target, op=op_text, value=value)]
                 return [Assignment(target=target, value=value)]
             elif expr_n.type == "method_invocation":
                 expr = self._parse_expression(expr_n, code_bytes)
@@ -188,8 +193,24 @@ class JavaParser:
             body = self._parse_block_or_stmt(body_n, code_bytes)
             return [WhileStmt(condition=cond, body=body)]
 
+        elif ntype == "do_statement":
+            cond_n = node.child_by_field_name("condition")
+            body_n = node.child_by_field_name("body")
+            cond = self._parse_expression(cond_n, code_bytes) if cond_n else Literal(True)
+            body = self._parse_block_or_stmt(body_n, code_bytes)
+            return [DoWhileStmt(condition=cond, body=body)]
+
         elif ntype == "for_statement":
             return self._parse_for(node, code_bytes)
+
+        elif ntype == "enhanced_for_statement":
+            name_n = node.child_by_field_name("name")
+            val_n = node.child_by_field_name("value")
+            body_n = node.child_by_field_name("body")
+            var_name = self._get_text(name_n, code_bytes) if name_n else "item"
+            iter_expr = self._parse_expression(val_n, code_bytes) if val_n else None
+            body = self._parse_block_or_stmt(body_n, code_bytes)
+            return [ForEachStmt(var_name=var_name, iterable=iter_expr, body=body)]
 
         elif ntype == "return_statement":
             val = None
@@ -273,6 +294,8 @@ class JavaParser:
             return Literal(True)
         elif ntype == "false":
             return Literal(False)
+        elif ntype == "null_literal":
+            return Literal(None)
         elif ntype == "identifier":
             return Identifier(name=self._get_text(node, code_bytes))
 
@@ -350,5 +373,22 @@ class JavaParser:
             for c in node.children:
                 if c.type not in ["(", ")"]:
                     return self._parse_expression(c, code_bytes)
+
+        elif ntype == "ternary_expression":
+            cond_n = node.child_by_field_name("condition")
+            conseq_n = node.child_by_field_name("consequence")
+            alt_n = node.child_by_field_name("alternative")
+            cond = self._parse_expression(cond_n, code_bytes) if cond_n else Literal(True)
+            then_e = self._parse_expression(conseq_n, code_bytes) if conseq_n else Literal(None)
+            else_e = self._parse_expression(alt_n, code_bytes) if alt_n else Literal(None)
+            return TernaryOp(condition=cond, then_expr=then_e, else_expr=else_e)
+
+        elif ntype == "cast_expression":
+            type_n = node.child_by_field_name("type")
+            val_n = node.child_by_field_name("value")
+            t_text = self._get_text(type_n, code_bytes) if type_n else ""
+            target_type = self._parse_type(t_text)
+            operand = self._parse_expression(val_n, code_bytes) if val_n else None
+            return CastExpr(target_type=target_type, operand=operand)
 
         return None

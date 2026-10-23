@@ -7,7 +7,8 @@ from app.ir.nodes import (
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
         ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
-        FunctionCall, IRType, TypeKind, ImportStmt
+        FunctionCall, IRType, TypeKind, ImportStmt,
+        ForEachStmt, AugmentedAssignment, CastExpr
     )
 
 class GoParser:
@@ -169,6 +170,14 @@ class GoParser:
             right_n = node.child_by_field_name("right")
             target = self._parse_expression(left_n, code_bytes)
             value = self._parse_expression(right_n, code_bytes)
+            op = "="
+            for c in node.children:
+                t = self._get_text(c, code_bytes).strip()
+                if t in ["+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="]:
+                    op = t
+                    break
+            if op != "=":
+                return [AugmentedAssignment(target=target, op=op, value=value)]
             return [Assignment(target=target, value=value)]
 
         elif ntype == "inc_statement" or ntype == "dec_statement":
@@ -200,17 +209,33 @@ class GoParser:
             return [IfStmt(condition=cond, then_branch=then_body, else_branch=else_body)]
 
         elif ntype == "for_statement":
-            # Can have for_clause: init; cond; post
+            # Can have for_clause or range_clause
             for_clause = None
+            range_clause = None
             for c in node.children:
                 if c.type == "for_clause":
                     for_clause = c
-                    break
+                elif c.type == "range_clause":
+                    range_clause = c
 
             body_n = node.child_by_field_name("body")
             body = self._parse_block_or_stmt(body_n, code_bytes)
 
-            if for_clause:
+            if range_clause:
+                left_n = range_clause.child_by_field_name("left")
+                right_n = range_clause.child_by_field_name("right")
+                var_name = "item"
+                if left_n:
+                    left_text = self._get_text(left_n, code_bytes).strip()
+                    parts = [p.strip() for p in left_text.split(",")]
+                    if len(parts) >= 2:
+                        var_name = parts[1]
+                    elif len(parts) == 1 and parts[0] != "_":
+                        var_name = parts[0]
+                iter_expr = self._parse_expression(right_n, code_bytes) if right_n else None
+                return [ForEachStmt(var_name=var_name, iterable=iter_expr, body=body)]
+
+            elif for_clause:
                 init_n = for_clause.child_by_field_name("initializer")
                 cond_n = for_clause.child_by_field_name("condition")
                 var_name = "i"
@@ -300,6 +325,8 @@ class GoParser:
             return Literal(True)
         elif ntype == "false":
             return Literal(False)
+        elif ntype == "nil":
+            return Literal(None)
         elif ntype == "identifier":
             return Identifier(name=self._get_text(node, code_bytes))
 
@@ -369,7 +396,23 @@ class GoParser:
                 return FunctionCall(name="print", args=args)
             elif fn_text == "len" and len(args) == 1:
                 return ArrayLength(array=args[0])
+            elif fn_text in ["int", "int64", "int32", "int16", "int8"] and len(args) == 1:
+                return CastExpr(target_type=IRType.int_type(), operand=args[0])
+            elif fn_text in ["float64", "float32"] and len(args) == 1:
+                return CastExpr(target_type=IRType.float_type(), operand=args[0])
+            elif fn_text == "string" and len(args) == 1:
+                return CastExpr(target_type=IRType.string_type(), operand=args[0])
+            elif fn_text == "bool" and len(args) == 1:
+                return CastExpr(target_type=IRType.bool_type(), operand=args[0])
             return FunctionCall(name=fn_text, args=args)
+
+        elif ntype == "type_conversion_expression":
+            type_n = node.child_by_field_name("type")
+            operand_n = node.child_by_field_name("operand")
+            t_text = self._get_text(type_n, code_bytes) if type_n else ""
+            target_type = self._parse_type(t_text)
+            operand = self._parse_expression(operand_n, code_bytes) if operand_n else None
+            return CastExpr(target_type=target_type, operand=operand)
 
         elif ntype == "parenthesized_expression":
             for c in node.children:

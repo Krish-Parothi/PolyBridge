@@ -4,7 +4,8 @@ from app.ir.nodes import (
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
         ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt,
         Literal, Identifier, BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess,
-        ArrayLength, FunctionCall, IRType, TypeKind
+        ArrayLength, FunctionCall, IRType, TypeKind,
+        ForEachStmt, AugmentedAssignment, DoWhileStmt, TernaryOp, CastExpr, MethodCall
     )
 from app.libraries.registry import LibraryRegistry
 
@@ -132,6 +133,17 @@ class GoEmitter:
                 return [f"{ind}{target} := {val}"]
             return [f"{ind}{target} = {val}"]
 
+        elif isinstance(stmt, AugmentedAssignment):
+            target = self._emit_expr(stmt.target)
+            val = self._emit_expr(stmt.value)
+            op = stmt.op
+            if op == "//=":
+                op = "/="
+            elif op == "**=":
+                self.used_imports.add('"math"')
+                return [f"{ind}{target} = int(math.Pow(float64({target}), float64({val})))"]
+            return [f"{ind}{target} {op} {val}"]
+
         elif isinstance(stmt, IfStmt):
             cond = self._emit_condition(stmt.condition)
             lines = [f"{ind}if {cond} {{"]
@@ -152,12 +164,30 @@ class GoEmitter:
             lines.append(f"{ind}}}")
             return lines
 
+        elif isinstance(stmt, DoWhileStmt):
+            lines = [f"{ind}for {{"]
+            for s in stmt.body:
+                lines.extend(self._emit_statement(s, indent_level + 1))
+            cond = self._emit_condition(stmt.condition) if stmt.condition else "true"
+            lines.append(f"{self._indent(indent_level + 1)}if !({cond}) {{ break }}")
+            lines.append(f"{ind}}}")
+            return lines
+
         elif isinstance(stmt, ForRangeStmt):
             start = self._emit_expr(stmt.start) if stmt.start else "0"
             end = self._emit_expr(stmt.end) if stmt.end else "0"
             step_str = f"{stmt.var_name} += {self._emit_expr(stmt.step)}" if stmt.step else f"{stmt.var_name}++"
 
             lines = [f"{ind}for {stmt.var_name} := {start}; {stmt.var_name} < {end}; {step_str} {{"]
+            for s in stmt.body:
+                lines.extend(self._emit_statement(s, indent_level + 1))
+            lines.append(f"{ind}}}")
+            return lines
+
+        elif isinstance(stmt, ForEachStmt):
+            iter_str = self._emit_expr(stmt.iterable)
+            self.declared_vars.add(stmt.var_name)
+            lines = [f"{ind}for _, {stmt.var_name} := range {iter_str} {{"]
             for s in stmt.body:
                 lines.extend(self._emit_statement(s, indent_level + 1))
             lines.append(f"{ind}}}")
@@ -187,6 +217,11 @@ class GoEmitter:
                 elif stmt.expr.name == "append" and len(stmt.expr.args) == 2:
                     obj = self._emit_expr(stmt.expr.args[0])
                     arg = self._emit_expr(stmt.expr.args[1])
+                    return [f"{ind}{obj} = append({obj}, {arg})"]
+            elif isinstance(stmt.expr, MethodCall):
+                if stmt.expr.method_name in ["append", "push"] and stmt.expr.args:
+                    obj = self._emit_expr(stmt.expr.object_expr)
+                    arg = self._emit_expr(stmt.expr.args[0])
                     return [f"{ind}{obj} = append({obj}, {arg})"]
             return [f"{ind}{self._emit_expr(stmt.expr)}"]
 
@@ -219,6 +254,8 @@ class GoEmitter:
             return ""
 
         if isinstance(expr, Literal):
+            if expr.value is None:
+                return "nil"
             if isinstance(expr.value, bool):
                 return "true" if expr.value else "false"
             elif isinstance(expr.value, str):
@@ -239,6 +276,9 @@ class GoEmitter:
             elif op == "//":
                 self.needs_floor_div = True
                 return f"floorDiv({left_str}, {right_str})"
+            elif op == "**":
+                self.used_imports.add('"math"')
+                return f"int(math.Pow(float64({left_str}), float64({right_str})))"
             elif op == "===":
                 op = "=="
             elif op == "!==":
@@ -282,6 +322,47 @@ class GoEmitter:
         elif isinstance(expr, ArrayLength):
             arr_str = self._emit_expr(expr.array)
             return f"len({arr_str})"
+
+        elif isinstance(expr, TernaryOp):
+            cond = self._emit_condition(expr.condition)
+            then_str = self._emit_expr(expr.then_expr)
+            else_str = self._emit_expr(expr.else_expr)
+            typ = self._to_go_type(expr.inferred_type) if expr.inferred_type and expr.inferred_type.kind != TypeKind.UNKNOWN else "int"
+            return f"func() {typ} {{ if {cond} {{ return {then_str} }}; return {else_str} }}()"
+
+        elif isinstance(expr, CastExpr):
+            op_str = self._emit_expr(expr.operand)
+            if expr.target_type.kind == TypeKind.INT:
+                return f"int({op_str})"
+            elif expr.target_type.kind == TypeKind.FLOAT:
+                return f"float64({op_str})"
+            elif expr.target_type.kind == TypeKind.STRING:
+                self.used_imports.add('"fmt"')
+                return f"fmt.Sprint({op_str})"
+            elif expr.target_type.kind == TypeKind.BOOL:
+                return f"bool({op_str})"
+            return op_str
+
+        elif isinstance(expr, MethodCall):
+            obj_str = self._emit_expr(expr.object_expr)
+            m = expr.method_name
+            args_strs = [self._emit_expr(a) for a in expr.args]
+            if m in ["push", "append"] and len(args_strs) == 1:
+                return f"append({obj_str}, {args_strs[0]})"
+            elif m in ["lower", "toLowerCase"]:
+                self.used_imports.add('"strings"')
+                return f"strings.ToLower({obj_str})"
+            elif m in ["upper", "toUpperCase"]:
+                self.used_imports.add('"strings"')
+                return f"strings.ToUpper({obj_str})"
+            elif m in ["strip", "trim"]:
+                self.used_imports.add('"strings"')
+                return f"strings.TrimSpace({obj_str})"
+            elif m in ["find", "indexOf"] and args_strs:
+                self.used_imports.add('"strings"')
+                return f"strings.Index({obj_str}, {args_strs[0]})"
+            joined_args = ", ".join(args_strs)
+            return f"{obj_str}.{m}({joined_args})"
 
         elif isinstance(expr, FunctionCall):
             args_strs = [self._emit_expr(a) for a in expr.args]

@@ -4,7 +4,8 @@ from app.ir.nodes import (
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
         ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
-        FunctionCall, IRType, TypeKind
+        FunctionCall, IRType, TypeKind,
+        ForEachStmt, AugmentedAssignment, DoWhileStmt, TernaryOp, CastExpr, MethodCall
     )
 from app.libraries.registry import LibraryRegistry
 
@@ -86,6 +87,14 @@ class JavaScriptEmitter:
                 return [f"{ind}let {target} = {val};"]
             return [f"{ind}{target} = {val};"]
 
+        elif isinstance(stmt, AugmentedAssignment):
+            target = self._emit_expr(stmt.target)
+            val = self._emit_expr(stmt.value)
+            op = stmt.op
+            if op == "//=":
+                return [f"{ind}{target} = Math.floor({target} / {val});"]
+            return [f"{ind}{target} {op} {val};"]
+
         elif isinstance(stmt, IfStmt):
             cond = self._emit_expr(stmt.condition)
             lines = [f"{ind}if ({cond}) {{"]
@@ -106,12 +115,28 @@ class JavaScriptEmitter:
             lines.append(f"{ind}}}")
             return lines
 
+        elif isinstance(stmt, DoWhileStmt):
+            cond = self._emit_expr(stmt.condition) if stmt.condition else "true"
+            lines = [f"{ind}do {{"]
+            for s in stmt.body:
+                lines.extend(self._emit_statement(s, indent_level + 1, is_global))
+            lines.append(f"{ind}}} while ({cond});")
+            return lines
+
         elif isinstance(stmt, ForRangeStmt):
             start = self._emit_expr(stmt.start) if stmt.start else "0"
             end = self._emit_expr(stmt.end) if stmt.end else "0"
             step_str = f"{stmt.var_name} += {self._emit_expr(stmt.step)}" if stmt.step else f"{stmt.var_name}++"
 
             lines = [f"{ind}for (let {stmt.var_name} = {start}; {stmt.var_name} < {end}; {step_str}) {{"]
+            for s in stmt.body:
+                lines.extend(self._emit_statement(s, indent_level + 1, is_global))
+            lines.append(f"{ind}}}")
+            return lines
+
+        elif isinstance(stmt, ForEachStmt):
+            iter_str = self._emit_expr(stmt.iterable)
+            lines = [f"{ind}for (let {stmt.var_name} of {iter_str}) {{"]
             for s in stmt.body:
                 lines.extend(self._emit_statement(s, indent_level + 1, is_global))
             lines.append(f"{ind}}}")
@@ -142,6 +167,8 @@ class JavaScriptEmitter:
             return ""
 
         if isinstance(expr, Literal):
+            if expr.value is None:
+                return "null"
             if isinstance(expr.value, bool):
                 return "true" if expr.value else "false"
             elif isinstance(expr.value, str):
@@ -187,6 +214,41 @@ class JavaScriptEmitter:
         elif isinstance(expr, ArrayLength):
             arr_str = self._emit_expr(expr.array)
             return f"{arr_str}.length"
+
+        elif isinstance(expr, TernaryOp):
+            cond = self._emit_expr(expr.condition)
+            then_str = self._emit_expr(expr.then_expr)
+            else_str = self._emit_expr(expr.else_expr)
+            return f"({cond} ? {then_str} : {else_str})"
+
+        elif isinstance(expr, CastExpr):
+            op_str = self._emit_expr(expr.operand)
+            if expr.target_type.kind == TypeKind.INT:
+                return f"Math.floor(Number({op_str}))"
+            elif expr.target_type.kind == TypeKind.FLOAT:
+                return f"Number({op_str})"
+            elif expr.target_type.kind == TypeKind.STRING:
+                return f"String({op_str})"
+            elif expr.target_type.kind == TypeKind.BOOL:
+                return f"Boolean({op_str})"
+            return op_str
+
+        elif isinstance(expr, MethodCall):
+            obj_str = self._emit_expr(expr.object_expr)
+            m = expr.method_name
+            args_strs = [self._emit_expr(a) for a in expr.args]
+            if m in ["append", "push"] and len(args_strs) == 1:
+                return f"{obj_str}.push({args_strs[0]})"
+            elif m in ["lower"]:
+                return f"{obj_str}.toLowerCase()"
+            elif m in ["upper"]:
+                return f"{obj_str}.toUpperCase()"
+            elif m in ["strip"]:
+                return f"{obj_str}.trim()"
+            elif m in ["find"]:
+                return f"{obj_str}.indexOf({args_strs[0]})"
+            joined_args = ", ".join(args_strs)
+            return f"{obj_str}.{m}({joined_args})"
 
         elif isinstance(expr, FunctionCall):
             args_strs = [self._emit_expr(a) for a in expr.args]

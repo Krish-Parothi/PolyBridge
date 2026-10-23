@@ -4,7 +4,8 @@ from app.ir.nodes import (
         VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
         ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
-        FunctionCall, IRType, TypeKind
+        FunctionCall, IRType, TypeKind,
+        ForEachStmt, AugmentedAssignment, DoWhileStmt, TernaryOp, CastExpr, MethodCall
     )
 from app.libraries.registry import LibraryRegistry
 
@@ -75,6 +76,11 @@ class PythonEmitter:
             val = self._emit_expr(stmt.value)
             return [f"{ind}{target} = {val}"]
 
+        elif isinstance(stmt, AugmentedAssignment):
+            target = self._emit_expr(stmt.target)
+            val = self._emit_expr(stmt.value)
+            return [f"{ind}{target} {stmt.op} {val}"]
+
         elif isinstance(stmt, IfStmt):
             cond = self._emit_expr(stmt.condition)
             lines = [f"{ind}if {cond}:"]
@@ -119,6 +125,28 @@ class PythonEmitter:
                 lines.append(f"{self._indent(indent_level + 1)}pass")
             return lines
 
+        elif isinstance(stmt, ForEachStmt):
+            iter_str = self._emit_expr(stmt.iterable)
+            lines = [f"{ind}for {stmt.var_name} in {iter_str}:"]
+            if stmt.body:
+                for s in stmt.body:
+                    lines.extend(self._emit_statement(s, indent_level + 1))
+            else:
+                lines.append(f"{self._indent(indent_level + 1)}pass")
+            return lines
+
+        elif isinstance(stmt, DoWhileStmt):
+            lines = [f"{ind}while True:"]
+            if stmt.body:
+                for s in stmt.body:
+                    lines.extend(self._emit_statement(s, indent_level + 1))
+            else:
+                lines.append(f"{self._indent(indent_level + 1)}pass")
+            cond = self._emit_expr(stmt.condition) if stmt.condition else "True"
+            lines.append(f"{self._indent(indent_level + 1)}if not ({cond}):")
+            lines.append(f"{self._indent(indent_level + 2)}break")
+            return lines
+
         elif isinstance(stmt, ReturnStmt):
             if stmt.value:
                 return [f"{ind}return {self._emit_expr(stmt.value)}"]
@@ -144,6 +172,8 @@ class PythonEmitter:
             return ""
 
         if isinstance(expr, Literal):
+            if expr.value is None:
+                return "None"
             if isinstance(expr.value, bool):
                 return "True" if expr.value else "False"
             return repr(expr.value)
@@ -184,6 +214,41 @@ class PythonEmitter:
         elif isinstance(expr, ArrayLength):
             arr_str = self._emit_expr(expr.array)
             return f"len({arr_str})"
+
+        elif isinstance(expr, TernaryOp):
+            cond = self._emit_expr(expr.condition)
+            then_str = self._emit_expr(expr.then_expr)
+            else_str = self._emit_expr(expr.else_expr)
+            return f"({then_str} if {cond} else {else_str})"
+
+        elif isinstance(expr, CastExpr):
+            op_str = self._emit_expr(expr.operand)
+            if expr.target_type.kind == TypeKind.INT:
+                return f"int({op_str})"
+            elif expr.target_type.kind == TypeKind.FLOAT:
+                return f"float({op_str})"
+            elif expr.target_type.kind == TypeKind.STRING:
+                return f"str({op_str})"
+            elif expr.target_type.kind == TypeKind.BOOL:
+                return f"bool({op_str})"
+            return op_str
+
+        elif isinstance(expr, MethodCall):
+            obj_str = self._emit_expr(expr.object_expr)
+            m = expr.method_name
+            args_strs = [self._emit_expr(a) for a in expr.args]
+            if m in ["push", "append"] and len(args_strs) == 1:
+                return f"{obj_str}.append({args_strs[0]})"
+            elif m in ["toLowerCase"]:
+                return f"{obj_str}.lower()"
+            elif m in ["toUpperCase"]:
+                return f"{obj_str}.upper()"
+            elif m in ["trim", "trimStart", "trimEnd"]:
+                return f"{obj_str}.strip()"
+            elif m in ["indexOf"]:
+                return f"{obj_str}.find({args_strs[0]})"
+            joined_args = ", ".join(args_strs)
+            return f"{obj_str}.{m}({joined_args})"
 
         elif isinstance(expr, FunctionCall):
             args_strs = [self._emit_expr(a) for a in expr.args]

@@ -238,6 +238,68 @@ class LibraryRegistry:
                 elif target_lang == "cpp":
                     return f"{base}.pop_back()", None
 
+            # String methods
+            item_arg = args_strs[0] if args_strs else ""
+            if method in ["lower", "toLowerCase"]:
+                if target_lang == "python":
+                    return f"{base}.lower()", None
+                elif target_lang == "java":
+                    return f"{base}.toLowerCase()", None
+                elif target_lang == "javascript":
+                    return f"{base}.toLowerCase()", None
+                elif target_lang == "go":
+                    return f"strings.ToLower({base})", '"strings"'
+
+            if method in ["upper", "toUpperCase"]:
+                if target_lang == "python":
+                    return f"{base}.upper()", None
+                elif target_lang == "java":
+                    return f"{base}.toUpperCase()", None
+                elif target_lang == "javascript":
+                    return f"{base}.toUpperCase()", None
+                elif target_lang == "go":
+                    return f"strings.ToUpper({base})", '"strings"'
+
+            if method in ["strip", "trim"]:
+                if target_lang == "python":
+                    return f"{base}.strip()", None
+                elif target_lang == "java":
+                    return f"{base}.trim()", None
+                elif target_lang == "javascript":
+                    return f"{base}.trim()", None
+                elif target_lang == "go":
+                    return f"strings.TrimSpace({base})", '"strings"'
+
+            if method in ["startswith", "startsWith"]:
+                if target_lang == "python":
+                    return f"{base}.startswith({item_arg})", None
+                elif target_lang == "java":
+                    return f"{base}.startsWith({item_arg})", None
+                elif target_lang == "javascript":
+                    return f"{base}.startsWith({item_arg})", None
+                elif target_lang == "go":
+                    return f"strings.HasPrefix({base}, {item_arg})", '"strings"'
+
+            if method in ["endswith", "endsWith"]:
+                if target_lang == "python":
+                    return f"{base}.endswith({item_arg})", None
+                elif target_lang == "java":
+                    return f"{base}.endsWith({item_arg})", None
+                elif target_lang == "javascript":
+                    return f"{base}.endsWith({item_arg})", None
+                elif target_lang == "go":
+                    return f"strings.HasSuffix({base}, {item_arg})", '"strings"'
+
+            if method in ["find", "indexOf"]:
+                if target_lang == "python":
+                    return f"{base}.find({item_arg})", None
+                elif target_lang == "java":
+                    return f"{base}.indexOf({item_arg})", None
+                elif target_lang == "javascript":
+                    return f"{base}.indexOf({item_arg})", None
+                elif target_lang == "go":
+                    return f"strings.Index({base}, {item_arg})", '"strings"'
+
         return None, None
 
     @classmethod

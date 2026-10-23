@@ -74,11 +74,13 @@ class Expression(IRNode):
 
 @dataclass
 class Literal(Expression):
-    value: Union[int, float, str, bool] = None
+    value: Union[int, float, str, bool, None] = None
 
     def __post_init__(self):
         if self.inferred_type.kind == TypeKind.UNKNOWN:
-            if isinstance(self.value, bool):
+            if self.value is None:
+                self.inferred_type = IRType.void_type()
+            elif isinstance(self.value, bool):
                 self.inferred_type = IRType.bool_type()
             elif isinstance(self.value, int):
                 self.inferred_type = IRType.int_type()
@@ -248,6 +250,85 @@ class FunctionCall(Expression):
             "name": f"Call: {self.name}()",
             "attributes": {"args_count": len(self.args), "type": self.inferred_type.to_str()},
             "children": [a.to_tree_node() for a in self.args]
+        }
+
+@dataclass
+class TernaryOp(Expression):
+    """Conditional expression: condition ? then_expr : else_expr."""
+    condition: Expression = None
+    then_expr: Expression = None
+    else_expr: Expression = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "node": "TernaryOp",
+            "condition": self.condition.to_dict() if self.condition else None,
+            "then_expr": self.then_expr.to_dict() if self.then_expr else None,
+            "else_expr": self.else_expr.to_dict() if self.else_expr else None,
+            "type": self.inferred_type.to_dict()
+        }
+
+    def to_tree_node(self) -> Dict[str, Any]:
+        children = []
+        if self.condition:
+            children.append(self.condition.to_tree_node())
+        if self.then_expr:
+            children.append(self.then_expr.to_tree_node())
+        if self.else_expr:
+            children.append(self.else_expr.to_tree_node())
+        return {
+            "name": "TernaryOp (?:)",
+            "attributes": {"type": self.inferred_type.to_str()},
+            "children": children
+        }
+
+@dataclass
+class CastExpr(Expression):
+    """Type cast expression: int(x), float(x), str(x), bool(x)."""
+    target_type: IRType = field(default_factory=IRType.unknown)
+    operand: Expression = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "node": "CastExpr",
+            "target_type": self.target_type.to_dict(),
+            "operand": self.operand.to_dict() if self.operand else None,
+            "type": self.target_type.to_dict()
+        }
+
+    def to_tree_node(self) -> Dict[str, Any]:
+        children = [self.operand.to_tree_node()] if self.operand else []
+        return {
+            "name": f"Cast: {self.target_type.to_str()}",
+            "attributes": {"type": self.target_type.to_str()},
+            "children": children
+        }
+
+@dataclass
+class MethodCall(Expression):
+    """Method call on an object: obj.method(args)."""
+    object_expr: Expression = None
+    method_name: str = ""
+    args: List[Expression] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "node": "MethodCall",
+            "object": self.object_expr.to_dict() if self.object_expr else None,
+            "method": self.method_name,
+            "args": [a.to_dict() for a in self.args],
+            "type": self.inferred_type.to_dict()
+        }
+
+    def to_tree_node(self) -> Dict[str, Any]:
+        children = []
+        if self.object_expr:
+            children.append(self.object_expr.to_tree_node())
+        children.extend([a.to_tree_node() for a in self.args])
+        return {
+            "name": f"MethodCall: .{self.method_name}()",
+            "attributes": {"method": self.method_name, "type": self.inferred_type.to_str()},
+            "children": children
         }
 
 # Statements
@@ -436,6 +517,99 @@ class ForRangeStmt(Statement):
         return {
             "name": f"ForRange: {self.var_name}",
             "attributes": {"var": self.var_name},
+            "children": children
+        }
+
+@dataclass
+class ForEachStmt(Statement):
+    """For-each loop: for var_name in iterable_expr (iterate over array elements)."""
+    var_name: str = ""
+    iterable: Expression = None
+    body: List[Statement] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "node": "ForEachStmt",
+            "var_name": self.var_name,
+            "iterable": self.iterable.to_dict() if self.iterable else None,
+            "body": [s.to_dict() for s in self.body]
+        }
+
+    def to_tree_node(self) -> Dict[str, Any]:
+        children = []
+        if self.iterable:
+            children.append({
+                "name": f"Iterable ({self.var_name})",
+                "attributes": {"var": self.var_name},
+                "children": [self.iterable.to_tree_node()]
+            })
+        children.append({
+            "name": f"Body ({len(self.body)})",
+            "attributes": {},
+            "children": [s.to_tree_node() for s in self.body]
+        })
+        return {
+            "name": f"ForEach: {self.var_name}",
+            "attributes": {"var": self.var_name},
+            "children": children
+        }
+
+@dataclass
+class AugmentedAssignment(Statement):
+    """Augmented assignment: target += value, target -= value, etc."""
+    target: Expression = None
+    op: str = ""  # +=, -=, *=, /=, %=, **=, //=
+    value: Expression = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "node": "AugmentedAssignment",
+            "target": self.target.to_dict() if self.target else None,
+            "op": self.op,
+            "value": self.value.to_dict() if self.value else None
+        }
+
+    def to_tree_node(self) -> Dict[str, Any]:
+        children = []
+        if self.target:
+            children.append(self.target.to_tree_node())
+        if self.value:
+            children.append(self.value.to_tree_node())
+        return {
+            "name": f"AugAssign ({self.op})",
+            "attributes": {"op": self.op},
+            "children": children
+        }
+
+@dataclass
+class DoWhileStmt(Statement):
+    """Do-while loop: do { body } while (condition)."""
+    condition: Expression = None
+    body: List[Statement] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "node": "DoWhileStmt",
+            "condition": self.condition.to_dict() if self.condition else None,
+            "body": [s.to_dict() for s in self.body]
+        }
+
+    def to_tree_node(self) -> Dict[str, Any]:
+        children = []
+        children.append({
+            "name": f"Body ({len(self.body)})",
+            "attributes": {},
+            "children": [s.to_tree_node() for s in self.body]
+        })
+        if self.condition:
+            children.append({
+                "name": "Condition",
+                "attributes": {},
+                "children": [self.condition.to_tree_node()]
+            })
+        return {
+            "name": "DoWhileLoop",
+            "attributes": {},
             "children": children
         }
 

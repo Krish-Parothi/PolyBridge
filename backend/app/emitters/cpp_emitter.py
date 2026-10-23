@@ -2,9 +2,10 @@ from typing import List, Optional, Set, Dict, Any
 from app.ir.nodes import (
     Program, FunctionDef, Parameter, Statement, Expression,
     VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
-    ReturnStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
+    ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt, Literal, Identifier,
     BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
-    FunctionCall, IRType, TypeKind
+    FunctionCall, IRType, TypeKind,
+    ForEachStmt, AugmentedAssignment, DoWhileStmt, TernaryOp, CastExpr, MethodCall
 )
 from app.libraries.registry import LibraryRegistry
 
@@ -153,14 +154,27 @@ class CppEmitter:
             val_str = self._emit_expr(stmt.value)
             return [f"{ind}{target_str} = {val_str};"]
 
+        elif isinstance(stmt, AugmentedAssignment):
+            target = self._emit_expr(stmt.target)
+            val = self._emit_expr(stmt.value)
+            op = stmt.op
+            if op == "//=":
+                op = "/="
+            elif op == "**=":
+                self.used_includes.add("#include <cmath>")
+                return [f"{ind}{target} = std::pow({target}, {val});"]
+            return [f"{ind}{target} {op} {val};"]
+
         elif isinstance(stmt, IfStmt):
             cond_str = self._emit_expr(stmt.condition)
             lines = [f"{ind}if ({cond_str}) {{"]
-            for s in stmt.then_body:
+            then_b = getattr(stmt, "then_branch", getattr(stmt, "then_body", []))
+            else_b = getattr(stmt, "else_branch", getattr(stmt, "else_body", []))
+            for s in then_b:
                 lines.extend(self._emit_statement(s, indent_level + 1))
-            if stmt.else_body:
+            if else_b:
                 lines.append(f"{ind}}} else {{")
-                for s in stmt.else_body:
+                for s in else_b:
                     lines.extend(self._emit_statement(s, indent_level + 1))
             lines.append(f"{ind}}}")
             return lines
@@ -171,6 +185,14 @@ class CppEmitter:
             for s in stmt.body:
                 lines.extend(self._emit_statement(s, indent_level + 1))
             lines.append(f"{ind}}}")
+            return lines
+
+        elif isinstance(stmt, DoWhileStmt):
+            cond = self._emit_expr(stmt.condition) if stmt.condition else "true"
+            lines = [f"{ind}do {{"]
+            for s in stmt.body:
+                lines.extend(self._emit_statement(s, indent_level + 1))
+            lines.append(f"{ind}}} while ({cond});")
             return lines
 
         elif isinstance(stmt, ForRangeStmt):
@@ -191,10 +213,24 @@ class CppEmitter:
             lines.append(f"{ind}}}")
             return lines
 
+        elif isinstance(stmt, ForEachStmt):
+            iter_str = self._emit_expr(stmt.iterable)
+            lines = [f"{ind}for (const auto& {stmt.var_name} : {iter_str}) {{"]
+            for s in stmt.body:
+                lines.extend(self._emit_statement(s, indent_level + 1))
+            lines.append(f"{ind}}}")
+            return lines
+
         elif isinstance(stmt, ReturnStmt):
             if stmt.value:
                 return [f"{ind}return {self._emit_expr(stmt.value)};"]
             return [f"{ind}return;"]
+
+        elif isinstance(stmt, BreakStmt):
+            return [f"{ind}break;"]
+
+        elif isinstance(stmt, ContinueStmt):
+            return [f"{ind}continue;"]
 
         elif isinstance(stmt, PrintStmt):
             args_str = " << \" \" << ".join(self._emit_expr(a) for a in stmt.args)
@@ -203,6 +239,18 @@ class CppEmitter:
             return [f"{ind}std::cout << {args_str} << std::endl;"]
 
         elif isinstance(stmt, ExpressionStmt):
+            if isinstance(stmt.expr, FunctionCall):
+                if (stmt.expr.name.endswith(".append") or stmt.expr.name.endswith(".push")) and stmt.expr.args:
+                    obj = stmt.expr.name.split(".")[0]
+                    arg = self._emit_expr(stmt.expr.args[0])
+                    return [f"{ind}{obj}.push_back({arg});"]
+            elif isinstance(stmt.expr, MethodCall):
+                if stmt.expr.method_name in ["append", "push", "push_back"] and stmt.expr.args:
+                    obj = self._emit_expr(stmt.expr.object_expr)
+                    arg = self._emit_expr(stmt.expr.args[0])
+                    return [f"{ind}{obj}.push_back({arg});"]
+                args_str = ", ".join(self._emit_expr(a) for a in stmt.expr.args)
+                return [f"{ind}{self._emit_expr(stmt.expr.object_expr)}.{stmt.expr.method_name}({args_str});"]
             return [f"{ind}{self._emit_expr(stmt.expr)};"]
 
         return []
@@ -212,6 +260,8 @@ class CppEmitter:
             return ""
 
         if isinstance(expr, Literal):
+            if expr.value is None:
+                return "nullptr"
             if isinstance(expr.value, bool):
                 return "true" if expr.value else "false"
             elif isinstance(expr.value, str):
@@ -232,6 +282,9 @@ class CppEmitter:
             elif op == "//":
                 self.needs_floor_div = True
                 return f"floorDiv({left_str}, {right_str})"
+            elif op == "**":
+                self.used_includes.add("#include <cmath>")
+                return f"std::pow({left_str}, {right_str})"
             return f"({left_str} {op} {right_str})"
 
         elif isinstance(expr, UnaryOp):
@@ -252,6 +305,34 @@ class CppEmitter:
         elif isinstance(expr, ArrayLength):
             arr_str = self._emit_expr(expr.array)
             return f"(int){arr_str}.size()"
+
+        elif isinstance(expr, TernaryOp):
+            cond = self._emit_expr(expr.condition)
+            then_str = self._emit_expr(expr.then_expr)
+            else_str = self._emit_expr(expr.else_expr)
+            return f"({cond} ? {then_str} : {else_str})"
+
+        elif isinstance(expr, CastExpr):
+            op_str = self._emit_expr(expr.operand)
+            if expr.target_type.kind == TypeKind.INT:
+                return f"static_cast<int>({op_str})"
+            elif expr.target_type.kind == TypeKind.FLOAT:
+                return f"static_cast<double>({op_str})"
+            elif expr.target_type.kind == TypeKind.STRING:
+                self.used_includes.add("#include <string>")
+                return f"std::to_string({op_str})"
+            elif expr.target_type.kind == TypeKind.BOOL:
+                return f"static_cast<bool>({op_str})"
+            return op_str
+
+        elif isinstance(expr, MethodCall):
+            obj_str = self._emit_expr(expr.object_expr)
+            m = expr.method_name
+            args_strs = [self._emit_expr(a) for a in expr.args]
+            if m in ["append", "push", "push_back"] and len(args_strs) == 1:
+                return f"{obj_str}.push_back({args_strs[0]})"
+            joined_args = ", ".join(args_strs)
+            return f"{obj_str}.{m}({joined_args})"
 
         elif isinstance(expr, FunctionCall):
             args_strs = [self._emit_expr(a) for a in expr.args]

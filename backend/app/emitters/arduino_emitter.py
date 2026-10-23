@@ -4,7 +4,8 @@ from app.ir.nodes import (
     VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
     ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt,
     Literal, Identifier, BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess,
-    ArrayLength, FunctionCall, IRType, TypeKind
+    ArrayLength, FunctionCall, IRType, TypeKind,
+    ForEachStmt, AugmentedAssignment, DoWhileStmt, TernaryOp, CastExpr, MethodCall
 )
 
 class ArduinoEmitter:
@@ -200,6 +201,15 @@ class ArduinoEmitter:
                 scan_expr(e.operand)
             elif isinstance(e, FunctionCall):
                 for a in e.args: scan_expr(a)
+            elif isinstance(e, TernaryOp):
+                scan_expr(e.condition)
+                scan_expr(e.then_expr)
+                scan_expr(e.else_expr)
+            elif isinstance(e, CastExpr):
+                scan_expr(e.operand)
+            elif isinstance(e, MethodCall):
+                scan_expr(e.object_expr)
+                for a in e.args: scan_expr(a)
 
         def scan_stmt(s: Statement):
             if isinstance(s, VarDecl):
@@ -210,6 +220,9 @@ class ArduinoEmitter:
             elif isinstance(s, Assignment):
                 scan_expr(s.target)
                 scan_expr(s.value)
+            elif isinstance(s, AugmentedAssignment):
+                scan_expr(s.target)
+                scan_expr(s.value)
             elif isinstance(s, IfStmt):
                 scan_expr(s.condition)
                 for st in s.then_branch: scan_stmt(st)
@@ -217,10 +230,16 @@ class ArduinoEmitter:
             elif isinstance(s, WhileStmt):
                 scan_expr(s.condition)
                 for st in s.body: scan_stmt(st)
+            elif isinstance(s, DoWhileStmt):
+                scan_expr(s.condition)
+                for st in s.body: scan_stmt(st)
             elif isinstance(s, ForRangeStmt):
                 scan_expr(s.start)
                 scan_expr(s.end)
                 if s.step: scan_expr(s.step)
+                for st in s.body: scan_stmt(st)
+            elif isinstance(s, ForEachStmt):
+                scan_expr(s.iterable)
                 for st in s.body: scan_stmt(st)
             elif isinstance(s, ReturnStmt) and s.value:
                 scan_expr(s.value)
@@ -297,6 +316,17 @@ class ArduinoEmitter:
             val_str = self._emit_expr(stmt.value)
             return [f"{ind}{target_str} = {val_str};"]
 
+        elif isinstance(stmt, AugmentedAssignment):
+            target = self._emit_expr(stmt.target)
+            val = self._emit_expr(stmt.value)
+            op = stmt.op
+            if op == "//=":
+                op = "/="
+            elif op == "**=":
+                self.needs_math = True
+                return [f"{ind}{target} = pow({target}, {val});"]
+            return [f"{ind}{target} {op} {val};"]
+
         elif isinstance(stmt, IfStmt):
             cond_str = self._emit_expr(stmt.condition)
             lines = [f"{ind}if ({cond_str}) {{"]
@@ -317,6 +347,14 @@ class ArduinoEmitter:
             lines.append(f"{ind}}}")
             return lines
 
+        elif isinstance(stmt, DoWhileStmt):
+            cond = self._emit_expr(stmt.condition) if stmt.condition else "true"
+            lines = [f"{ind}do {{"]
+            for s in stmt.body:
+                lines.extend(self._emit_statement(s, indent_level + 1))
+            lines.append(f"{ind}}} while ({cond});")
+            return lines
+
         elif isinstance(stmt, ForRangeStmt):
             start = self._emit_expr(stmt.start)
             end = self._emit_expr(stmt.end)
@@ -324,6 +362,14 @@ class ArduinoEmitter:
             lines = [
                 f"{ind}for (int {stmt.var_name} = {start}; {stmt.var_name} < {end}; {stmt.var_name} += {step}) {{"
             ]
+            for s in stmt.body:
+                lines.extend(self._emit_statement(s, indent_level + 1))
+            lines.append(f"{ind}}}")
+            return lines
+
+        elif isinstance(stmt, ForEachStmt):
+            iter_str = self._emit_expr(stmt.iterable)
+            lines = [f"{ind}for (auto {stmt.var_name} : {iter_str}) {{"]
             for s in stmt.body:
                 lines.extend(self._emit_statement(s, indent_level + 1))
             lines.append(f"{ind}}}")
@@ -341,6 +387,18 @@ class ArduinoEmitter:
             return [f"{ind}continue;"]
 
         elif isinstance(stmt, ExpressionStmt):
+            if isinstance(stmt.expr, FunctionCall):
+                if (stmt.expr.name.endswith(".append") or stmt.expr.name.endswith(".push")) and stmt.expr.args:
+                    obj = stmt.expr.name.split(".")[0]
+                    arg = self._emit_expr(stmt.expr.args[0])
+                    return [f"{ind}{obj}.push_back({arg});"]
+            elif isinstance(stmt.expr, MethodCall):
+                if stmt.expr.method_name in ["append", "push", "push_back"] and stmt.expr.args:
+                    obj = self._emit_expr(stmt.expr.object_expr)
+                    arg = self._emit_expr(stmt.expr.args[0])
+                    return [f"{ind}{obj}.push_back({arg});"]
+                args_str = ", ".join(self._emit_expr(a) for a in stmt.expr.args)
+                return [f"{ind}{self._emit_expr(stmt.expr.object_expr)}.{stmt.expr.method_name}({args_str});"]
             return [f"{ind}{self._emit_expr(stmt.expr)};"]
 
         elif isinstance(stmt, PrintStmt):
@@ -377,6 +435,9 @@ class ArduinoEmitter:
             if op == "//":
                 self.needs_floor_div = True
                 return f"floorDiv({left_str}, {right_str})"
+            elif op == "**":
+                self.needs_math = True
+                return f"pow({left_str}, {right_str})"
             elif op in ["===", "=="]:
                 op = "=="
             elif op in ["!==", "!="]:
@@ -405,6 +466,33 @@ class ArduinoEmitter:
         elif isinstance(expr, ArrayLength):
             arr_str = self._emit_expr(expr.array)
             return f"{arr_str}.size()"
+
+        elif isinstance(expr, TernaryOp):
+            cond = self._emit_expr(expr.condition)
+            then_str = self._emit_expr(expr.then_expr)
+            else_str = self._emit_expr(expr.else_expr)
+            return f"({cond} ? {then_str} : {else_str})"
+
+        elif isinstance(expr, CastExpr):
+            op_str = self._emit_expr(expr.operand)
+            if expr.target_type.kind == TypeKind.INT:
+                return f"((int)({op_str}))"
+            elif expr.target_type.kind == TypeKind.FLOAT:
+                return f"((float)({op_str}))"
+            elif expr.target_type.kind == TypeKind.STRING:
+                return f"String({op_str})"
+            elif expr.target_type.kind == TypeKind.BOOL:
+                return f"((bool)({op_str}))"
+            return op_str
+
+        elif isinstance(expr, MethodCall):
+            obj_str = self._emit_expr(expr.object_expr)
+            m = expr.method_name
+            args_strs = [self._emit_expr(a) for a in expr.args]
+            if m in ["append", "push", "push_back"] and len(args_strs) == 1:
+                return f"{obj_str}.push_back({args_strs[0]})"
+            joined_args = ", ".join(args_strs)
+            return f"{obj_str}.{m}({joined_args})"
 
         elif isinstance(expr, FunctionCall):
             name = expr.name

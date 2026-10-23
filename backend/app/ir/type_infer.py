@@ -3,7 +3,8 @@ from app.ir.nodes import (
     IRType, TypeKind, Program, FunctionDef, Statement, Expression,
     Literal, Identifier, BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess,
     ArrayLength, FunctionCall, VarDecl, Assignment, IfStmt, WhileStmt,
-    ForRangeStmt, ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt
+    ForRangeStmt, ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt,
+    ForEachStmt, AugmentedAssignment, DoWhileStmt, TernaryOp, CastExpr, MethodCall
 )
 
 class TypeInferrer:
@@ -37,12 +38,15 @@ class TypeInferrer:
 
             if returned_types:
                 # Pick the most specific return type
-                best_ret = returned_types[0]
+                best_ret = None
                 for r in returned_types:
                     if r.kind != TypeKind.UNKNOWN and r.kind != TypeKind.VOID:
                         best_ret = r
                         break
-                fn.return_type = best_ret
+                if best_ret:
+                    fn.return_type = best_ret
+                elif fn.return_type.kind == TypeKind.UNKNOWN:
+                    fn.return_type = returned_types[0]
             elif fn.return_type.kind == TypeKind.UNKNOWN:
                 fn.return_type = IRType.void_type()
 
@@ -111,6 +115,24 @@ class TypeInferrer:
                 t = self._check_call_in_stmt(s, func_name, param_index)
                 if t:
                     return t
+        elif isinstance(stmt, AugmentedAssignment) and stmt.value:
+            return self._check_call_in_expr(stmt.value, func_name, param_index)
+        elif isinstance(stmt, ForEachStmt):
+            t = self._check_call_in_expr(stmt.iterable, func_name, param_index)
+            if t:
+                return t
+            for s in stmt.body:
+                t = self._check_call_in_stmt(s, func_name, param_index)
+                if t:
+                    return t
+        elif isinstance(stmt, DoWhileStmt):
+            t = self._check_call_in_expr(stmt.condition, func_name, param_index)
+            if t:
+                return t
+            for s in stmt.body:
+                t = self._check_call_in_stmt(s, func_name, param_index)
+                if t:
+                    return t
         return None
 
     def _check_call_in_expr(self, expr: Any, func_name: str, param_index: int) -> Optional[IRType]:
@@ -138,6 +160,21 @@ class TypeInferrer:
             return self._check_call_in_expr(expr.right, func_name, param_index)
         elif isinstance(expr, UnaryOp):
             return self._check_call_in_expr(expr.operand, func_name, param_index)
+        elif isinstance(expr, TernaryOp):
+            for part in [expr.condition, expr.then_expr, expr.else_expr]:
+                t = self._check_call_in_expr(part, func_name, param_index)
+                if t:
+                    return t
+        elif isinstance(expr, CastExpr):
+            return self._check_call_in_expr(expr.operand, func_name, param_index)
+        elif isinstance(expr, MethodCall):
+            t = self._check_call_in_expr(expr.object_expr, func_name, param_index)
+            if t:
+                return t
+            for a in expr.args:
+                t = self._check_call_in_expr(a, func_name, param_index)
+                if t:
+                    return t
         return None
 
     def _check_usage(self, node: Any, param_name: str) -> Optional[IRType]:
@@ -258,6 +295,48 @@ class TypeInferrer:
                 t = self._check_usage(a, param_name)
                 if t:
                     return t
+        elif isinstance(node, ForEachStmt):
+            if isinstance(node.iterable, Identifier) and node.iterable.name == param_name:
+                return IRType.array_of(IRType.int_type())
+            t = self._check_usage(node.iterable, param_name)
+            if t:
+                return t
+            for s in node.body:
+                t = self._check_usage(s, param_name)
+                if t:
+                    return t
+        elif isinstance(node, AugmentedAssignment):
+            t1 = self._check_usage(node.target, param_name)
+            if t1:
+                return t1
+            t2 = self._check_usage(node.value, param_name)
+            if t2:
+                return t2
+        elif isinstance(node, DoWhileStmt):
+            cond_t = self._check_usage(node.condition, param_name)
+            if cond_t:
+                return cond_t
+            for s in node.body:
+                t = self._check_usage(s, param_name)
+                if t:
+                    return t
+        elif isinstance(node, TernaryOp):
+            for part in [node.condition, node.then_expr, node.else_expr]:
+                t = self._check_usage(part, param_name)
+                if t:
+                    return t
+        elif isinstance(node, CastExpr):
+            return self._check_usage(node.operand, param_name)
+        elif isinstance(node, MethodCall):
+            if node.method_name in ["append", "push", "pop", "remove", "insert"] and isinstance(node.object_expr, Identifier) and node.object_expr.name == param_name:
+                return IRType.array_of(IRType.int_type())
+            t = self._check_usage(node.object_expr, param_name)
+            if t:
+                return t
+            for a in node.args:
+                t = self._check_usage(a, param_name)
+                if t:
+                    return t
         return None
 
     def _infer_statement(self, stmt: Statement, env: Dict[str, IRType], return_types: Optional[List[IRType]] = None):
@@ -277,6 +356,12 @@ class TypeInferrer:
             elif isinstance(stmt.target, ArrayAccess):
                 self._infer_expression(stmt.target, env)
 
+        elif isinstance(stmt, AugmentedAssignment):
+            if stmt.target:
+                self._infer_expression(stmt.target, env)
+            if stmt.value:
+                self._infer_expression(stmt.value, env)
+
         elif isinstance(stmt, IfStmt):
             self._infer_expression(stmt.condition, env)
             for s in stmt.then_branch:
@@ -289,6 +374,12 @@ class TypeInferrer:
             for s in stmt.body:
                 self._infer_statement(s, env, return_types)
 
+        elif isinstance(stmt, DoWhileStmt):
+            if stmt.condition:
+                self._infer_expression(stmt.condition, env)
+            for s in stmt.body:
+                self._infer_statement(s, env, return_types)
+
         elif isinstance(stmt, ForRangeStmt):
             env[stmt.var_name] = IRType.int_type()
             if stmt.start:
@@ -297,6 +388,17 @@ class TypeInferrer:
                 self._infer_expression(stmt.end, env)
             if stmt.step:
                 self._infer_expression(stmt.step, env)
+            for s in stmt.body:
+                self._infer_statement(s, env, return_types)
+
+        elif isinstance(stmt, ForEachStmt):
+            iter_type = self._infer_expression(stmt.iterable, env) if stmt.iterable else IRType.unknown()
+            if iter_type.kind == TypeKind.ARRAY and iter_type.element_type:
+                env[stmt.var_name] = iter_type.element_type
+            elif iter_type.kind == TypeKind.STRING:
+                env[stmt.var_name] = IRType.string_type()
+            else:
+                env[stmt.var_name] = IRType.int_type()
             for s in stmt.body:
                 self._infer_statement(s, env, return_types)
 
@@ -321,6 +423,13 @@ class TypeInferrer:
                 name = stmt.expr.name
                 if (name.endswith(".append") or name.endswith(".push")) and stmt.expr.args:
                     obj = name.split(".")[0]
+                    if obj in env and env[obj].kind == TypeKind.ARRAY:
+                        arg_type = self._infer_expression(stmt.expr.args[0], env)
+                        if env[obj].element_type is None or env[obj].element_type.kind == TypeKind.UNKNOWN:
+                            env[obj].element_type = arg_type
+            elif isinstance(stmt.expr, MethodCall):
+                if stmt.expr.method_name in ["append", "push"] and stmt.expr.args and isinstance(stmt.expr.object_expr, Identifier):
+                    obj = stmt.expr.object_expr.name
                     if obj in env and env[obj].kind == TypeKind.ARRAY:
                         arg_type = self._infer_expression(stmt.expr.args[0], env)
                         if env[obj].element_type is None or env[obj].element_type.kind == TypeKind.UNKNOWN:
@@ -408,8 +517,45 @@ class TypeInferrer:
                 expr.inferred_type = self.func_signatures[expr.name].return_type
             elif any(expr.name.lower().endswith(f".{fn}") or expr.name.lower() == fn for fn in ["sqrt", "sin", "cos", "tan", "log", "exp", "pow"]):
                 expr.inferred_type = IRType.float_type()
-            elif any(expr.name.lower().endswith(f".{fn}") or expr.name.lower() == fn for fn in ["floor", "ceil", "round", "abs"]):
+            elif any(expr.name.lower().endswith(f".{fn}") or expr.name.lower() == fn for fn in ["floor", "ceil", "round", "abs", "find", "index", "indexof", "count", "lastindexof"]):
                 expr.inferred_type = IRType.int_type()
+            elif any(expr.name.lower().endswith(f".{fn}") or expr.name.lower() == fn for fn in ["isdigit", "isalpha", "isalnum", "startswith", "endswith", "contains", "includes"]):
+                expr.inferred_type = IRType.bool_type()
+            elif any(expr.name.lower().endswith(f".{fn}") or expr.name.lower() == fn for fn in ["upper", "lower", "strip", "lstrip", "rstrip", "replace", "title", "touppercase", "tolowercase", "trim", "substring"]):
+                expr.inferred_type = IRType.string_type()
+            elif any(expr.name.lower().endswith(f".{fn}") or expr.name.lower() == fn for fn in ["split"]):
+                expr.inferred_type = IRType.array_of(IRType.string_type())
+            else:
+                expr.inferred_type = IRType.unknown()
+            return expr.inferred_type
+
+        elif isinstance(expr, TernaryOp):
+            if expr.condition:
+                self._infer_expression(expr.condition, env)
+            tt = self._infer_expression(expr.then_expr, env) if expr.then_expr else IRType.unknown()
+            et = self._infer_expression(expr.else_expr, env) if expr.else_expr else IRType.unknown()
+            expr.inferred_type = tt if tt.kind != TypeKind.UNKNOWN else et
+            return expr.inferred_type
+
+        elif isinstance(expr, CastExpr):
+            if expr.operand:
+                self._infer_expression(expr.operand, env)
+            expr.inferred_type = expr.target_type
+            return expr.inferred_type
+
+        elif isinstance(expr, MethodCall):
+            if expr.object_expr:
+                self._infer_expression(expr.object_expr, env)
+            for a in expr.args:
+                self._infer_expression(a, env)
+            if expr.method_name in ["isdigit", "isalpha", "isalnum", "startswith", "endswith"]:
+                expr.inferred_type = IRType.bool_type()
+            elif expr.method_name in ["find", "index", "count", "indexOf", "lastIndexOf"]:
+                expr.inferred_type = IRType.int_type()
+            elif expr.method_name in ["upper", "lower", "strip", "lstrip", "rstrip", "replace", "title", "toUpperCase", "toLowerCase", "trim"]:
+                expr.inferred_type = IRType.string_type()
+            elif expr.method_name in ["split"]:
+                expr.inferred_type = IRType.array_of(IRType.string_type())
             else:
                 expr.inferred_type = IRType.unknown()
             return expr.inferred_type
