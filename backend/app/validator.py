@@ -108,6 +108,42 @@ class ScopeValidator:
                             severity="error",
                             message=f"Scope violation: Unsupported Java import '{mod}'."
                         ))
+            elif language in ["cpp", "arduino"]:
+                if stripped.startswith("#include "):
+                    inc_target = stripped.replace("#include", "").strip("<>\" \t;")
+                    allowed_cpp = ["iostream", "vector", "string", "cmath", "algorithm", "numeric", "cassert", "cstdint", "cstdio", "Arduino.h"]
+                    if inc_target not in allowed_cpp:
+                        diagnostics.append(Diagnostic(
+                            line=idx,
+                            column=1,
+                            severity="error",
+                            message=f"Scope violation: Unsupported header <{inc_target}> in {language}. PolyBridge supports core algorithmic libraries."
+                        ))
+                if "malloc(" in stripped or " new " in stripped:
+                    diagnostics.append(Diagnostic(
+                        line=idx,
+                        column=1,
+                        severity="error",
+                        message="Scope violation: Dynamic heap allocation (new/malloc) is not supported in scoped procedural IR."
+                    ))
+
+            elif language == "verilog":
+                if stripped.startswith("inout ") or " inout " in stripped:
+                    diagnostics.append(Diagnostic(
+                        line=idx,
+                        column=1,
+                        severity="error",
+                        message="Scope violation: Bidirectional 'inout' tri-state ports cannot be mapped to procedural IR."
+                    ))
+                gate_prims = ["nand ", "nor ", "xnor ", "bufif0 ", "bufif1 ", "notif0 ", "notif1 "]
+                for gp in gate_prims:
+                    if stripped.startswith(gp):
+                        diagnostics.append(Diagnostic(
+                            line=idx,
+                            column=1,
+                            severity="error",
+                            message=f"Scope violation: Gate-level structural primitive '{gp.strip()}' is not supported. Use RTL behavioral logic."
+                        ))
 
         return diagnostics
 

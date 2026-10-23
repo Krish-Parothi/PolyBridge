@@ -38,7 +38,8 @@ interface PresetExample {
   code: string;
 }
 
-const DEFAULT_PYTHON_CODE = `def bubble_sort(arr):
+const STARTER_TEMPLATES: Record<string, string> = {
+  python: `def bubble_sort(arr):
     n = len(arr)
     for i in range(n):
         for j in range(0, n - i - 1):
@@ -51,7 +52,150 @@ const DEFAULT_PYTHON_CODE = `def bubble_sort(arr):
 a = [64, 34, 25, 12, 22, 11, 90]
 res = bubble_sort(a)
 print(res)
-`;
+`,
+  javascript: `function bubbleSort(arr) {
+    let n = arr.length;
+    for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n - i - 1; j++) {
+            if (arr[j] > arr[j + 1]) {
+                let temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+        }
+    }
+    return arr;
+}
+
+let a = [64, 34, 25, 12, 22, 11, 90];
+let res = bubbleSort(a);
+console.log(res);
+`,
+  java: `public class Solution {
+    public static int[] bubbleSort(int[] arr) {
+        int n = arr.length;
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n - i - 1; j++) {
+                if (arr[j] > arr[j + 1]) {
+                    int temp = arr[j];
+                    arr[j] = arr[j + 1];
+                    arr[j + 1] = temp;
+                }
+            }
+        }
+        return arr;
+    }
+
+    public static void main(String[] args) {
+        int[] a = {64, 34, 25, 12, 22, 11, 90};
+        int[] res = bubbleSort(a);
+        for (int x : res) {
+            System.out.println(x);
+        }
+    }
+}
+`,
+  go: `package main
+
+import "fmt"
+
+func bubbleSort(arr []int) []int {
+    n := len(arr)
+    for i := 0; i < n; i++ {
+        for j := 0; j < n - i - 1; j++ {
+            if arr[j] > arr[j + 1] {
+                temp := arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = temp
+            }
+        }
+    }
+    return arr
+}
+
+func main() {
+    a := []int{64, 34, 25, 12, 22, 11, 90}
+    res := bubbleSort(a)
+    fmt.Println(res)
+}
+`,
+  cpp: `#include <iostream>
+#include <vector>
+
+std::vector<int> bubble_sort(std::vector<int> arr) {
+    int n = arr.size();
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n - i - 1; j++) {
+            if (arr[j] > arr[j + 1]) {
+                int temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+        }
+    }
+    return arr;
+}
+
+int main() {
+    std::vector<int> a = {64, 34, 25, 12, 22, 11, 90};
+    std::vector<int> res = bubble_sort(a);
+    for (int i = 0; i < res.size(); i++) {
+        std::cout << res[i] << std::endl;
+    }
+    return 0;
+}
+`,
+  arduino: `int add(int a, int b) {
+    return a + b;
+}
+
+void setup() {
+    Serial.begin(9600);
+    while (!Serial) { delay(10); }
+
+    int val = add(20, 22);
+    Serial.println(val);
+}
+
+void loop() {
+    delay(1000);
+}
+`,
+  verilog: `module add (
+    input  wire [31:0] a,
+    input  wire [31:0] b,
+    output reg  [31:0] result
+);
+
+    always @(*) begin
+        result = a + b;
+    end
+
+endmodule
+
+module add_tb;
+    reg  [31:0] a;
+    reg  [31:0] b;
+    wire [31:0] res;
+
+    add uut (
+        .a(a),
+        .b(b),
+        .result(res)
+    );
+
+    initial begin
+        a = 32'd15;
+        b = 32'd27;
+        #10;
+        $display("%0d", res);
+        $finish;
+    end
+endmodule
+`
+};
+
+const DEFAULT_PYTHON_CODE = STARTER_TEMPLATES.python;
 
 export const App: React.FC = () => {
   // Theme state: light by default
@@ -107,6 +251,10 @@ export const App: React.FC = () => {
   // Handle Language selection changes - clear previous target code to prevent cross-language execution mismatch
   const handleSourceLangChange = (newLang: string) => {
     setSourceLang(newLang);
+    const isStarterOrEmpty = !sourceCode.trim() || Object.values(STARTER_TEMPLATES).some((t) => t.trim() === sourceCode.trim());
+    if (isStarterOrEmpty && STARTER_TEMPLATES[newLang]) {
+      setSourceCode(STARTER_TEMPLATES[newLang]);
+    }
     setTargetCode('');
     setIrTree(null);
     setVerificationResult(null);
@@ -147,11 +295,17 @@ export const App: React.FC = () => {
         setHlsMetadata(data.hls_metadata || null);
         setDiagnostics(data.diagnostics || []);
       } else {
-        setTargetCode('');
-        setHlsMetadata(null);
+        setTargetCode(data.target_code || '');
+        setIrTree(data.ir_tree || null);
+        setHlsMetadata(data.hls_metadata || null);
         setDiagnostics(
           data.diagnostics || [
-            { line: 1, column: 1, severity: 'error', message: data.error || 'Transpilation failed' },
+            {
+              line: 1,
+              column: 1,
+              severity: 'error',
+              message: `${data.status ? `[${data.status}] ` : ''}${data.error || 'Transpilation failed'}`,
+            },
           ]
         );
         setActiveBottomTab('diagnostics');
@@ -190,9 +344,17 @@ export const App: React.FC = () => {
           setIrTree(data.ir_tree);
           setHlsMetadata(data.hls_metadata || null);
         } else {
+          setTargetCode(data.target_code || '');
+          setIrTree(data.ir_tree || null);
+          setHlsMetadata(data.hls_metadata || null);
           setDiagnostics(
             data.diagnostics || [
-              { line: 1, column: 1, severity: 'error', message: data.error || 'Transpilation failed' },
+              {
+                line: 1,
+                column: 1,
+                severity: 'error',
+                message: `${data.status ? `[${data.status}] ` : ''}${data.error || 'Transpilation failed'}`,
+              },
             ]
           );
           setIsTranspiling(false);
@@ -200,8 +362,13 @@ export const App: React.FC = () => {
           setIsConsoleOpen(true);
           return;
         }
-      } catch {
+      } catch (err: any) {
         setIsTranspiling(false);
+        setDiagnostics([
+          { line: 1, column: 1, severity: 'error', message: `Backend connection error: ${err.message}` },
+        ]);
+        setActiveBottomTab('diagnostics');
+        setIsConsoleOpen(true);
         return;
       }
       setIsTranspiling(false);
@@ -659,6 +826,9 @@ export const App: React.FC = () => {
                 <option value="javascript">JavaScript (ES6)</option>
                 <option value="java">Java 17</option>
                 <option value="go">Go 1.21</option>
+                <option value="cpp">C++ 20</option>
+                <option value="verilog">Verilog 2001 (HDL)</option>
+                <option value="arduino">Arduino C++ (.ino)</option>
               </select>
             </div>
 

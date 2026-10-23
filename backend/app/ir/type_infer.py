@@ -43,7 +43,7 @@ class TypeInferrer:
                     if r.kind != TypeKind.UNKNOWN and r.kind != TypeKind.VOID:
                         best_ret = r
                         break
-                if best_ret:
+                if best_ret and fn.return_type.kind == TypeKind.UNKNOWN:
                     fn.return_type = best_ret
                 elif fn.return_type.kind == TypeKind.UNKNOWN:
                     fn.return_type = returned_types[0]

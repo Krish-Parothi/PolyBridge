@@ -216,15 +216,14 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
     result?.target_result?.error === 'Go compiler not found' ||
     result?.target_result?.stderr?.includes('Go compiler') ||
     result?.target_result?.error?.includes('compiler not found');
-  const isTargetCompilationError = status === 'target_compilation_failure';
-  const isSourceCompilationError = status === 'source_compilation_failure';
-  const isTargetRuntimeError = status === 'target_runtime_failure';
-  const isSourceRuntimeError = status === 'source_runtime_failure';
+  const isTargetCompilationError = status === 'target_compile_error' || status === 'target_compilation_failure';
+  const isSourceCompilationError = status === 'parse_error' || status === 'source_compilation_failure';
+  const isTargetRuntimeError = status === 'target_runtime_error' || status === 'target_runtime_failure';
+  const isSourceRuntimeError = status === 'source_runtime_error' || status === 'source_runtime_failure';
   const isTimeout = status === 'timeout';
+  const isVerificationNotRun = status === 'verification_not_run';
 
-  const isHlsVerified =
-    status === 'hls_structural_verified' ||
-    (targetLang === 'verilog' && !!result?.target_result?.stdout?.includes('Synthesizable Verilog RTL verified structurally'));
+  const isHlsVerified = false;
   const isWarning = isTargetRuntimeMissing || isTimeout;
   const isSuccess = result?.match === true;
 
@@ -363,6 +362,23 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
               </span>
               <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                 — Source program crashed with an unhandled runtime error.
+              </span>
+            </>
+          ) : isVerificationNotRun ? (
+            <>
+              <AlertTriangle size={15} style={{ color: 'var(--color-warning)' }} />
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-sans)',
+                  color: 'var(--color-warning)',
+                }}
+              >
+                BEHAVIORAL VERIFICATION NOT RUN
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                — HDL compilation/simulation is reported separately from software stdout equivalence.
               </span>
             </>
           ) : isHlsVerified ? (

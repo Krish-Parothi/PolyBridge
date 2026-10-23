@@ -1,6 +1,6 @@
-# PolyBridge — A Scoped Multi-Language Transpiler with Web Playground and Behavioral Verification
+# PolyBridge — Multi-Source, Multi-Target Transpilation Platform
 
-**PolyBridge** is a transparent, inspectable educational source-to-source compiler (transpiler) that translates a procedural-plus-functions subset of **Python, JavaScript, Java, and Go** through a shared Intermediate Representation (IR).
+**PolyBridge** is a transparent, inspectable multi-source, multi-target source-to-source compiler (transpiler) that translates between **Python 3, JavaScript ES6, Java 17, Go 1.21, C++20, Arduino C++, and Verilog 2001 (HDL)** through a shared Universal Intermediate Representation (IR).
 
 It validates translation correctness through an execution-based **behavioral equivalence testing harness** and exposes the full compilation pipeline (Concrete Syntax Tree, Universal IR, and translated code) through an interactive React Web Playground.
 
@@ -9,42 +9,39 @@ It validates translation correctness through an execution-based **behavioral equ
 ## 🏛️ System Architecture
 
 ```text
-                     ┌────────────────────────┐
-                     │   Source Source Code   │
-                     │ (Python / JS / Java / Go)
-                     └───────────┬────────────┘
-                                 │
-                                 ▼
-                     ┌────────────────────────┐
-                     │   Tree-sitter Parser   │
-                     │ Concrete Syntax Tree   │
-                     └───────────┬────────────┘
-                                 │
-                                 ▼
-                     ┌────────────────────────┐
-                     │ Scope & Limits Check   │
-                     │  (≤ 300 lines, no OO)  │
-                     └───────────┬────────────┘
-                                 │
-                                 ▼
-                     ┌────────────────────────┐
-                     │  AST Visitor & Inferrer│
-                     │  Universal Agnostic IR │
-                     └───────────┬────────────┘
-                                 │
-                 ┌───────────────┴───────────────┐
-                 │                               │
-                 ▼                               ▼
-     ┌────────────────────────┐      ┌────────────────────────┐
-     │ Target Emitter Module  │      │ JSON / D3 Tree Export  │
-     │ (Java, Go, JS, Python) │      │ (Visual AST Hierarchy) │
-     └───────────┬────────────┘      └────────────────────────┘
-                 │
-                 ▼
-     ┌────────────────────────────────────────────────────────┐
-     │         Behavioral Equivalence Verification            │
-     │ Subprocess Sandbox ──▶ Output Normalizer ──▶ Diff View │
-     └────────────────────────────────────────────────────────┘
+                     ┌───────────────────────────────────────────────┐
+                     │              Source Code                      │
+                     │ (Python, JS, Java, Go, C++, Arduino, Verilog) │
+                     └───────────────────────┬───────────────────────┘
+                                             │
+                                             ▼
+                     ┌───────────────────────────────────────────────┐
+                     │          Tree-sitter AST Extraction           │
+                     └───────────────────────┬───────────────────────┘
+                                             │
+                                             ▼
+                     ┌───────────────────────────────────────────────┐
+                     │        Scope Validation & Diagnostics         │
+                     └───────────────────────┬───────────────────────┘
+                                             │
+                                             ▼
+                     ┌───────────────────────────────────────────────┐
+                     │       Type Inference & Universal IR           │
+                     └───────────────────────┬───────────────────────┘
+                                             │
+                             ┌───────────────┴───────────────┐
+                             │                               │
+                             ▼                               ▼
+                 ┌───────────────────────┐       ┌───────────────────────┐
+                 │ Target Language       │       │ Interactive Visual IR │
+                 │ Emitters (7 Targets)  │       │ Explorer & RTL View   │
+                 └───────────┬───────────┘       └───────────────────────┘
+                             │
+                             ▼
+                 ┌────────────────────────────────────────────────────────┐
+                 │         Behavioral Equivalence Verification            │
+                 │ Subprocess Sandbox ──▶ Output Normalizer ──▶ Diff View │
+                 └────────────────────────────────────────────────────────┘
 ```
 
 ---

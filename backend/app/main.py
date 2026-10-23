@@ -8,6 +8,9 @@ from app.parsers.python_parser import PythonParser
 from app.parsers.js_parser import JavaScriptParser
 from app.parsers.java_parser import JavaParser
 from app.parsers.go_parser import GoParser
+from app.parsers.cpp_parser import CppParser
+from app.parsers.verilog_parser import VerilogParser
+from app.parsers.arduino_parser import ArduinoParser
 
 from app.emitters.python_emitter import PythonEmitter
 from app.emitters.js_emitter import JavaScriptEmitter
@@ -18,6 +21,7 @@ from app.emitters.verilog_emitter import VerilogEmitter
 from app.emitters.arduino_emitter import ArduinoEmitter
 
 from app.ir.type_infer import TypeInferrer
+from app.semantics.analyzer import SemanticAnalyzer
 from app.validator import ScopeValidator
 from app.sandbox.runner import CodeRunner
 from app.sandbox.normalizer import OutputNormalizer
@@ -42,7 +46,10 @@ PARSERS = {
     "python": PythonParser(),
     "javascript": JavaScriptParser(),
     "java": JavaParser(),
-    "go": GoParser()
+    "go": GoParser(),
+    "cpp": CppParser(),
+    "verilog": VerilogParser(),
+    "arduino": ArduinoParser()
 }
 
 EMITTERS = {
@@ -160,6 +167,22 @@ def transpile(req: TranspileRequest):
         # Type Inference
         inferrer = TypeInferrer()
         program_ir = inferrer.infer_program(program_ir)
+
+        # Stage 3.5: Semantic Analysis & Static Type System (Phase 3)
+        analyzer = SemanticAnalyzer(src_lang=src_lang, tgt_lang=tgt_lang)
+        sem_diags = analyzer.analyze(program_ir)
+        diagnostics.extend(sem_diags)
+        sem_errors = [d for d in sem_diags if d.severity == "error"]
+        if sem_errors:
+            return TranspileResponse(
+                success=False,
+                target_code="",
+                diagnostics=[
+                    {"line": d.line, "column": d.column, "severity": d.severity, "message": d.message}
+                    for d in diagnostics
+                ],
+                error=sem_errors[0].message
+            )
 
         # Stage 4: Emit Target Code
         emitter = EMITTERS[tgt_lang]

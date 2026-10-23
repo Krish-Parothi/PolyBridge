@@ -56,9 +56,10 @@ class IRType:
     def array_of(cls, elem: IRType) -> IRType:
         return cls(TypeKind.ARRAY, element_type=elem)
 
-@dataclass
 class IRNode:
     """Base class for all Intermediate Representation nodes."""
+    line: Optional[int] = None
+    column: Optional[int] = None
     def to_dict(self) -> Dict[str, Any]:
         raise NotImplementedError
 
