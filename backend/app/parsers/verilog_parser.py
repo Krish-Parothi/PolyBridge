@@ -9,6 +9,7 @@ from app.ir.nodes import (
     Literal, Identifier, BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess,
     ArrayLength, FunctionCall, IRType, TypeKind
 )
+from app.parsers.diagnostics import attach_tree_diagnostics
 
 class VerilogParser:
     """Parses IEEE 1364-2001 Verilog RTL and testbenches into PolyBridge Universal IR."""
@@ -61,7 +62,11 @@ class VerilogParser:
             call = FunctionCall(name=main_fn.name, args=args)
             global_statements.append(PrintStmt(args=[call]))
 
-        return Program(functions=functions, global_statements=global_statements)
+        return attach_tree_diagnostics(
+            Program(functions=functions, global_statements=global_statements),
+            root,
+            code_bytes,
+        )
 
     def _get_text(self, node: Node, code_bytes: bytes) -> str:
         return code_bytes[node.start_byte:node.end_byte].decode("utf-8")
@@ -304,12 +309,26 @@ class VerilogParser:
             else:
                 return []
             lhs = lhs.strip()
-            sub_t = self.parser.parse(rhs.strip().encode("utf-8"))
-            r_expr = self._parse_verilog_expr(sub_t.root_node, rhs.strip().encode("utf-8")) or Identifier(name=rhs.strip())
+            rhs_text = rhs.strip()
+            # A standalone sized literal (for example 32'd10) is often
+            # exposed by Tree-sitter only as raw text in this fallback path.
+            # Preserve it as a numeric IR literal instead of emitting invalid
+            # Verilog syntax into software targets.
+            if any(ch in rhs_text.lower() for ch in ["'b", "'o", "'d", "'h"]):
+                r_expr = Literal(value=self._parse_verilog_number(rhs_text))
+            else:
+                sub_t = self.parser.parse(rhs_text.encode("utf-8"))
+                r_expr = self._parse_verilog_expr(sub_t.root_node, rhs_text.encode("utf-8")) or Identifier(name=rhs_text)
             return [Assignment(target=Identifier(name=lhs), value=r_expr)]
 
         target_name = self._get_text(lval_n, code_bytes).strip()
-        val_expr = self._parse_verilog_expr(rval_n, code_bytes) or Identifier(name=self._get_text(rval_n, code_bytes).strip())
+        raw_value = self._get_text(rval_n, code_bytes).strip()
+        val_expr = self._parse_verilog_expr(rval_n, code_bytes)
+        if val_expr is None:
+            if any(ch in raw_value.lower() for ch in ["'b", "'o", "'d", "'h"]):
+                val_expr = Literal(value=self._parse_verilog_number(raw_value))
+            else:
+                val_expr = Identifier(name=raw_value)
 
         # Filter out FSM control signal assignments (e.g. state <= NEXT; done <= 1;)
         if target_name in ["state", "done", "ready"]:

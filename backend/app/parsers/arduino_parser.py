@@ -6,6 +6,7 @@ from app.ir.nodes import (
     Program, FunctionDef, Statement, Expression,
     PrintStmt, ExpressionStmt, FunctionCall, Literal
 )
+from app.parsers.diagnostics import attach_tree_diagnostics
 
 class ArduinoParser(CppParser):
     """Parses Arduino C++ (.ino) code into PolyBridge Universal IR."""
@@ -65,7 +66,11 @@ class ArduinoParser(CppParser):
         elif loop_statements:
             global_statements = loop_statements
 
-        return Program(functions=functions, global_statements=global_statements, imports=[])
+        return attach_tree_diagnostics(
+            Program(functions=functions, global_statements=global_statements, imports=[]),
+            root,
+            code_bytes,
+        )
 
     def _parse_arduino_statement(self, node: Node, code_bytes: bytes) -> List[Statement]:
         # Filter out Arduino boilerplate statements

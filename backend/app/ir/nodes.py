@@ -744,13 +744,15 @@ class Program(IRNode):
     functions: List[FunctionDef] = field(default_factory=list)
     global_statements: List[Statement] = field(default_factory=list)
     imports: List[ImportStmt] = field(default_factory=list)
+    parse_diagnostics: List[Dict[str, Any]] = field(default_factory=list, repr=False)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "node": "Program",
             "imports": [i.to_dict() for i in self.imports],
             "functions": [f.to_dict() for f in self.functions],
-            "global_statements": [s.to_dict() for s in self.global_statements]
+            "global_statements": [s.to_dict() for s in self.global_statements],
+            "diagnostics": list(self.parse_diagnostics),
         }
 
     def to_tree_node(self) -> Dict[str, Any]:

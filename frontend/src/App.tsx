@@ -18,6 +18,7 @@ import {
   Clock,
   Download,
   ExternalLink,
+  ArrowLeft,
 } from 'lucide-react';
 import { IRTreeViewer } from './components/IRTreeViewer';
 import type { TreeNode } from './components/IRTreeViewer';
@@ -26,6 +27,7 @@ import type { VerificationResult } from './components/VerificationDiff';
 import { CircuitSchematicViewer } from './components/CircuitSchematicViewer';
 import type { HlsMetadata } from './components/CircuitSchematicViewer';
 import { CycleTimingWaveform } from './components/CycleTimingWaveform';
+import { LandingPage } from './components/LandingPage';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -198,6 +200,18 @@ endmodule
 const DEFAULT_PYTHON_CODE = STARTER_TEMPLATES.python;
 
 export const App: React.FC = () => {
+  const [showLanding, setShowLanding] = useState(() => window.location.hash !== '#workbench');
+
+  const openWorkbench = () => {
+    window.history.replaceState(null, '', '#workbench');
+    setShowLanding(false);
+  };
+
+  const openLanding = () => {
+    window.history.replaceState(null, '', window.location.pathname);
+    setShowLanding(true);
+  };
+
   // Theme state: light by default
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
@@ -525,6 +539,11 @@ export const App: React.FC = () => {
 
   const sourceLineCount = sourceCode.split('\n').length;
   const monacoTheme = theme === 'dark' ? 'vs-dark' : 'vs';
+  const visibleExamples = examples.filter((example) => example.language === sourceLang);
+
+  if (showLanding) {
+    return <LandingPage onLaunchWorkbench={openWorkbench} />;
+  }
 
   return (
     <div
@@ -553,6 +572,26 @@ export const App: React.FC = () => {
       >
         {/* Brand / Title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={openLanding}
+            title="Back to PolyBridge overview"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '4px 7px',
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-secondary)',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+            }}
+          >
+            <ArrowLeft size={11} /> Overview
+          </button>
+
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
             <span
               style={{
@@ -629,8 +668,8 @@ export const App: React.FC = () => {
               minWidth: 200,
             }}
           >
-            <option value="">Select Algorithm Benchmark...</option>
-            {examples.map((ex) => (
+              <option value="">Select {sourceLang} Snippet...</option>
+            {visibleExamples.map((ex) => (
               <option key={ex.id} value={ex.id}>
                 {ex.title} [{ex.category}] ({ex.language})
               </option>

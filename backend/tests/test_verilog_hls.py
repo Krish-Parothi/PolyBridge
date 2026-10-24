@@ -153,7 +153,7 @@ func adder(x int, y int) int {
     assert "module adder_tb;" in v_code
 
 
-def test_verify_behavior_hls_structural_success():
+def test_verify_behavior_rejects_unexecuted_verilog_claim():
     from app.main import verify_behavior, VerifyRequest
     py_code = "[11, 12, 22, 25, 34, 64, 90]"
     verilog_code = "// Synthesizable Verilog RTL verified structurally.\n// Install 'iverilog' & 'vvp' (Icarus Verilog) for cycle-accurate local simulation, or run directly on EDA Playground."
@@ -166,8 +166,11 @@ def test_verify_behavior_hls_structural_success():
         stdin_data=""
     )
     res = verify_behavior(req)
-    assert res.match is True
-    assert res.status == "hls_structural_verified"
+    # A comment claiming structural verification is not a simulation result.
+    # With Icarus installed this is a compilation failure; without it the
+    # result must be explicitly marked unavailable rather than equivalent.
+    assert res.match is False
+    assert res.status in {"target_compilation_failure", "runtime_unavailable"}
     assert res.diff == []
 
 

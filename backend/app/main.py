@@ -21,6 +21,9 @@ from app.emitters.verilog_emitter import VerilogEmitter
 from app.emitters.arduino_emitter import ArduinoEmitter
 
 from app.ir.type_infer import TypeInferrer
+from app.ir.cfg import build_program_cfg, lower_to_tac
+from app.ir.optimizer import IROptimizer, OptimizationConfig
+from app.ir.validation import validate_ir
 from app.semantics.analyzer import SemanticAnalyzer
 from app.validator import ScopeValidator
 from app.sandbox.runner import CodeRunner
@@ -52,6 +55,8 @@ PARSERS = {
     "arduino": ArduinoParser()
 }
 
+SUPPORTED_LANGUAGES = tuple(PARSERS.keys())
+
 EMITTERS = {
     "python": PythonEmitter(),
     "javascript": JavaScriptEmitter(),
@@ -66,8 +71,10 @@ EMITTERS = {
 
 class TranspileRequest(BaseModel):
     source_code: str
-    source_lang: str = Field(..., description="python | javascript | java | go")
-    target_lang: str = Field(..., description="python | javascript | java | go | cpp | verilog | arduino")
+    source_lang: str = Field(..., description="Supported source language")
+    target_lang: str = Field(..., description="Supported target language")
+    optimize: bool = Field(True, description="Enable semantics-preserving Universal IR optimization")
+    optimization_level: int = Field(1, ge=0, le=2, description="0 disables optimization, 1 conservative, 2 reserved")
 
 class TranspileResponse(BaseModel):
     success: bool
@@ -76,6 +83,11 @@ class TranspileResponse(BaseModel):
     diagnostics: List[Dict[str, Any]] = []
     error: Optional[str] = None
     hls_metadata: Optional[Dict[str, Any]] = None
+    ir_before: Optional[Dict[str, Any]] = None
+    ir_after: Optional[Dict[str, Any]] = None
+    optimization: Optional[Dict[str, Any]] = None
+    cfg: Optional[Dict[str, Any]] = None
+    tac: Optional[Dict[str, Any]] = None
 
 class VerifyRequest(BaseModel):
     source_code: str
@@ -83,6 +95,7 @@ class VerifyRequest(BaseModel):
     target_code: str
     target_lang: str
     stdin_data: str = ""
+    test_inputs: List[str] = Field(default_factory=list)
 
 class VerifyResponse(BaseModel):
     match: bool
@@ -92,6 +105,7 @@ class VerifyResponse(BaseModel):
     diff: List[str]
     normalized_source: str
     normalized_target: str
+    cases: List[Dict[str, Any]] = Field(default_factory=list)
 
 @app.get("/")
 def read_root():
@@ -99,7 +113,7 @@ def read_root():
         "project": "PolyBridge",
         "description": "Scoped Multi-Language Transpiler & Behavioral Verification",
         "status": "online",
-        "supported_languages": ["python", "javascript", "java", "go", "cpp", "verilog"]
+        "supported_languages": list(SUPPORTED_LANGUAGES)
     }
 
 @app.get("/api/health")
@@ -111,6 +125,7 @@ def health_check():
             "javascript": bool(shutil.which("node")),
             "java": bool(shutil.which("javac") and shutil.which("java")),
             "go": bool(CodeRunner.get_go_binary()),
+            "cpp": bool(shutil.which("g++") or shutil.which("clang++")),
             "verilog": bool(shutil.which("iverilog")),
             "arduino": bool(shutil.which("g++") or shutil.which("arduino-cli"))
         }
@@ -148,6 +163,14 @@ def transpile(req: TranspileRequest):
         # Stage 3: Parse to IR
         parser = PARSERS[src_lang]
         program_ir = parser.parse(req.source_code)
+        parse_errors = getattr(program_ir, "parse_diagnostics", [])
+        if parse_errors:
+            return TranspileResponse(
+                success=False,
+                target_code="",
+                diagnostics=[*diagnostics, *parse_errors],
+                error=parse_errors[0]["message"],
+            )
 
         # Validate IR level constraints (e.g. recursion in v1)
         ir_diags = ScopeValidator.validate_ir(program_ir)
@@ -184,7 +207,38 @@ def transpile(req: TranspileRequest):
                 error=sem_errors[0].message
             )
 
-        # Stage 4: Emit Target Code
+        ir_before = program_ir.to_dict()
+
+        # Stage 4: Validate and optimize the Universal IR.  Hardware targets
+        # receive the same conservative constant/algebraic passes; no software
+        # scheduling or target-specific lowering happens here.
+        optimizer = IROptimizer(
+            OptimizationConfig(enabled=req.optimize and req.optimization_level > 0),
+            target_language=tgt_lang,
+        )
+        program_ir, optimization_stats = optimizer.optimize(program_ir)
+        ir_errors = validate_ir(program_ir)
+        if ir_errors:
+            return TranspileResponse(
+                success=False,
+                target_code="",
+                diagnostics=[
+                    *[
+                        {"line": d.line, "column": d.column, "severity": d.severity, "message": d.message}
+                        for d in diagnostics
+                    ],
+                    *[
+                        {"line": 1, "column": 1, "severity": "error", "message": message}
+                        for message in ir_errors
+                    ],
+                ],
+                error=ir_errors[0],
+                ir_before=ir_before,
+                ir_after=program_ir.to_dict(),
+                optimization=optimization_stats.to_dict(),
+            )
+
+        # Stage 5: Emit Target Code
         emitter = EMITTERS[tgt_lang]
         target_code = emitter.emit(program_ir)
 
@@ -195,6 +249,9 @@ def transpile(req: TranspileRequest):
         if tgt_lang == "verilog" and isinstance(emitter, VerilogEmitter):
             hls_metadata = emitter.analyze_hls(program_ir)
 
+        cfg = build_program_cfg(program_ir.functions)
+        tac = {fn.name: [instruction.to_dict() for instruction in lower_to_tac(fn)] for fn in program_ir.functions}
+
         return TranspileResponse(
             success=True,
             target_code=target_code,
@@ -203,7 +260,12 @@ def transpile(req: TranspileRequest):
                 {"line": d.line, "column": d.column, "severity": d.severity, "message": d.message}
                 for d in diagnostics
             ],
-            hls_metadata=hls_metadata
+            hls_metadata=hls_metadata,
+            ir_before=ir_before,
+            ir_after=program_ir.to_dict(),
+            optimization=optimization_stats.to_dict(),
+            cfg={name: graph.to_dict() for name, graph in cfg.items()},
+            tac=tac,
         )
 
     except Exception as e:
@@ -215,52 +277,63 @@ def transpile(req: TranspileRequest):
 
 @app.post("/api/verify", response_model=VerifyResponse)
 def verify_behavior(req: VerifyRequest):
-    src_res = CodeRunner.run_code(req.source_code, req.source_lang, req.stdin_data)
-    tgt_res = CodeRunner.run_code(req.target_code, req.target_lang, req.stdin_data)
+    inputs = req.test_inputs or [req.stdin_data]
+    cases: List[Dict[str, Any]] = []
+    src_results = []
+    tgt_results = []
 
-    if src_res.status == "runtime_unavailable" or tgt_res.status == "runtime_unavailable":
-        classification = "runtime_unavailable"
+    def classify(src_res, tgt_res):
+        if src_res.status == "runtime_unavailable" or tgt_res.status == "runtime_unavailable":
+            return False, "runtime_unavailable", []
+        if src_res.status == "timeout" or tgt_res.status == "timeout":
+            return False, "timeout", []
+        if src_res.status == "compilation_error":
+            return False, "source_compilation_failure", []
+        if tgt_res.status == "compilation_error":
+            return False, "target_compilation_failure", []
+        if src_res.status == "runtime_error" or src_res.exit_code != 0:
+            return False, "source_runtime_failure", []
+        if tgt_res.status == "runtime_error" or tgt_res.exit_code != 0:
+            return False, "target_runtime_failure", []
+        is_equal, output_diff = OutputNormalizer.compare_outputs(src_res.stdout, tgt_res.stdout)
+        return is_equal, "verified_match" if is_equal else "output_mismatch", output_diff
+
+    for test_input in inputs:
+        src_res = CodeRunner.run_code(req.source_code, req.source_lang, test_input)
+        tgt_res = CodeRunner.run_code(req.target_code, req.target_lang, test_input)
+        src_results.append(src_res)
+        tgt_results.append(tgt_res)
+        case_match, case_status, case_diff = classify(src_res, tgt_res)
+        cases.append({
+            "stdin_data": test_input,
+            "match": case_match,
+            "status": case_status,
+            "source_result": src_res.to_dict(),
+            "target_result": tgt_res.to_dict(),
+            "diff": case_diff,
+            "normalized_source": OutputNormalizer.normalize_output(src_res.stdout),
+            "normalized_target": OutputNormalizer.normalize_output(tgt_res.stdout),
+        })
+
+    first_src = src_results[0]
+    first_tgt = tgt_results[0]
+    failed_case = next((case for case in cases if not case["match"]), None)
+    if failed_case:
         match = False
-        diff = []
-    elif src_res.status == "timeout" or tgt_res.status == "timeout":
-        classification = "timeout"
-        match = False
-        diff = []
-    elif src_res.status == "compilation_error":
-        classification = "source_compilation_failure"
-        match = False
-        diff = []
-    elif tgt_res.status == "compilation_error":
-        classification = "target_compilation_failure"
-        match = False
-        diff = []
-    elif src_res.status == "runtime_error" or src_res.exit_code != 0:
-        classification = "source_runtime_failure"
-        match = False
-        diff = []
-    elif tgt_res.status == "runtime_error" or tgt_res.exit_code != 0:
-        classification = "target_runtime_failure"
-        match = False
-        diff = []
-    elif (req.target_lang in ["verilog", "v"]) and ("Synthesizable Verilog RTL verified structurally" in (tgt_res.stdout or "")):
-        classification = "hls_structural_verified"
-        match = True
-        diff = []
+        classification = failed_case["status"]
+        diff = failed_case["diff"]
     else:
-        is_equal, diff = OutputNormalizer.compare_outputs(src_res.stdout, tgt_res.stdout)
-        if is_equal:
-            classification = "verified_match"
-            match = True
-        else:
-            classification = "output_mismatch"
-            match = False
+        match = True
+        classification = "verified_match"
+        diff = []
 
     return VerifyResponse(
         match=match,
         status=classification,
-        source_result=src_res.to_dict(),
-        target_result=tgt_res.to_dict(),
+        source_result=first_src.to_dict(),
+        target_result=first_tgt.to_dict(),
         diff=diff,
-        normalized_source=OutputNormalizer.normalize_output(src_res.stdout),
-        normalized_target=OutputNormalizer.normalize_output(tgt_res.stdout)
+        normalized_source=OutputNormalizer.normalize_output(first_src.stdout),
+        normalized_target=OutputNormalizer.normalize_output(first_tgt.stdout),
+        cases=cases,
     )

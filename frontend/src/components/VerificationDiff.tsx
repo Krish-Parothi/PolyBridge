@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   Terminal,
   Wrench,
-  Cpu,
 } from 'lucide-react';
 
 export interface VerificationResult {
@@ -223,7 +222,6 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
   const isTimeout = status === 'timeout';
   const isVerificationNotRun = status === 'verification_not_run';
 
-  const isHlsVerified = false;
   const isWarning = isTargetRuntimeMissing || isTimeout;
   const isSuccess = result?.match === true;
 
@@ -246,15 +244,11 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
           padding: '6px 14px',
           background: isWarning
             ? 'var(--color-warning-bg)'
-            : isHlsVerified
-            ? 'rgba(6, 182, 212, 0.12)'
             : isSuccess
             ? 'var(--color-success-bg)'
             : 'var(--color-error-bg)',
           borderBottom: isWarning
             ? '1px solid var(--color-warning-border)'
-            : isHlsVerified
-            ? '1px solid rgba(6, 182, 212, 0.3)'
             : isSuccess
             ? '1px solid var(--color-success-border)'
             : '1px solid var(--color-error-border)',
@@ -379,23 +373,6 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
               </span>
               <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                 — HDL compilation/simulation is reported separately from software stdout equivalence.
-              </span>
-            </>
-          ) : isHlsVerified ? (
-            <>
-              <Cpu size={15} style={{ color: '#06b6d4' }} />
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  fontFamily: 'var(--font-sans)',
-                  color: '#06b6d4',
-                }}
-              >
-                HLS SYNTHESIZABLE RTL VERIFIED (STRUCTURAL SUCCESS)
-              </span>
-              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                — Hardware RTL &amp; testbench generated. Local hardware simulation requires Icarus Verilog or EDA Playground.
               </span>
             </>
           ) : isSuccess ? (
@@ -559,36 +536,8 @@ export const VerificationDiff: React.FC<VerificationDiffProps> = ({
         </div>
       </div>
 
-      {/* HLS Verification Footer Information */}
-      {isHlsVerified && (
-        <div
-          style={{
-            background: 'rgba(6, 182, 212, 0.05)',
-            borderTop: '1px solid rgba(6, 182, 212, 0.2)',
-            padding: '7px 14px',
-            fontSize: 11,
-            color: 'var(--text-secondary)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Cpu size={14} style={{ color: '#06b6d4', flexShrink: 0 }} />
-            <span>
-              <strong>HLS Hardware Mode:</strong> Verilog RTL &amp; testbench ready for FPGA synthesis or simulation on <a href="https://www.edaplayground.com" target="_blank" rel="noreferrer" style={{ color: '#06b6d4', textDecoration: 'underline' }}>edaplayground.com</a>.
-            </span>
-          </div>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: '#06b6d4' }}>
-            Local Simulation: winget install Icarus.Verilog
-          </span>
-        </div>
-      )}
-
       {/* Unified Output Diff on Mismatch */}
-      {!result.match && !isHlsVerified && result.diff.length > 0 && (
+      {!result.match && result.diff.length > 0 && (
         <div
           style={{
             maxHeight: 110,

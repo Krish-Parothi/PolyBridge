@@ -43,12 +43,18 @@ class SemanticAnalyzer:
             if not fn.name:
                 continue
             param_types = [p.param_type for p in fn.params]
-            if self.symbol_table.lookup_local(fn.name):
+            existing = self.symbol_table.lookup_local(fn.name)
+            if existing and existing.kind not in {"builtin", "module"}:
                 self._add_diagnostic(
                     fn.line or 1, fn.column or 1, "error",
                     f"Semantic error: Function '{fn.name}' is already defined."
                 )
             else:
+                # User functions may intentionally use a standard-library
+                # spelling (for example C++ often has a helper named `sum`).
+                # A real declaration shadows the pre-registered builtin in
+                # the current global scope; duplicate user declarations do
+                # remain errors.
                 self.symbol_table.define(
                     name=fn.name,
                     symbol_type=fn.return_type,

@@ -9,7 +9,8 @@ from app.ir.nodes import (
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
         FunctionCall, IRType, TypeKind, ImportStmt, AugmentedAssignment,
         TernaryOp, CastExpr, MethodCall, DoWhileStmt
-    )
+)
+from app.parsers.diagnostics import attach_tree_diagnostics
 
 class JavaScriptParser:
     def __init__(self):
@@ -39,7 +40,11 @@ class JavaScriptParser:
                 if stmts:
                     global_statements.extend(stmts)
 
-        return Program(functions=functions, global_statements=global_statements, imports=imports)
+        return attach_tree_diagnostics(
+            Program(functions=functions, global_statements=global_statements, imports=imports),
+            root,
+            code_bytes,
+        )
 
     def _parse_import(self, node: Node, code_bytes: bytes) -> Optional[ImportStmt]:
         source_n = node.child_by_field_name("source")

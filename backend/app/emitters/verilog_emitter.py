@@ -63,13 +63,18 @@ class VerilogEmitter:
                 vars_found.update(self._collect_local_vars(stmt.then_branch))
                 vars_found.update(self._collect_local_vars(stmt.else_branch))
             elif isinstance(stmt, (WhileStmt, ForRangeStmt)):
+                if isinstance(stmt, ForRangeStmt):
+                    vars_found.add(stmt.var_name)
                 vars_found.update(self._collect_local_vars(stmt.body))
         return vars_found
 
     def _emit_module_and_testbench(self, fn: FunctionDef, globals_stmts: List[Statement]) -> Tuple[List[str], List[str]]:
         is_sequential = self._has_loops(fn.body)
         self.function_params = {p.name for p in fn.params}
-        local_vars = self._collect_local_vars(fn.body) - self.function_params
+        # `result` is already the module output port.  Verilog source parsed
+        # back into IR may contain an assignment to that name; it must not be
+        # redeclared as an internal register.
+        local_vars = self._collect_local_vars(fn.body) - self.function_params - {"result", "done", "ready", "state"}
 
         module_lines: List[str] = []
         tb_lines: List[str] = []
@@ -150,8 +155,6 @@ class VerilogEmitter:
 
         # Initial stimulus
         lines.append(f"{ind}initial begin")
-        lines.append(f"{self._indent(2)}$display(\"Starting simulation for {fn.name}...\");")
-
         # Extract arguments from global call if available, or generate standard test vectors
         sample_args = self._extract_call_args(fn.name, globals_stmts)
         if sample_args and len(sample_args) == len(fn.params):
@@ -163,8 +166,9 @@ class VerilogEmitter:
                 lines.append(f"{self._indent(2)}tb_{p.name} = {self.default_bit_width}'d{default_val};")
 
         lines.append(f"{self._indent(2)}#10;")
-        disp_args = ", ".join(f"tb_{p.name}" for p in fn.params)
-        lines.append(f"{self._indent(2)}$display(\"INPUTS: {disp_args} => RESULT: %0d\", tb_result);")
+        # Keep the simulation contract comparable with software targets: the
+        # testbench emits the observable result, not a diagnostic banner.
+        lines.append(f"{self._indent(2)}$display(\"%0d\", tb_result);")
         lines.append(f"{self._indent(2)}$finish;")
         lines.append(f"{ind}end")
         lines.append("")
@@ -234,6 +238,9 @@ class VerilogEmitter:
         for stmt in fn.body:
             if not isinstance(stmt, (WhileStmt, ForRangeStmt, ReturnStmt)):
                 lines.extend(self._emit_fsm_init_stmt(stmt, indent_level=6))
+            elif isinstance(stmt, ForRangeStmt):
+                start = self._emit_expr(stmt.start, use_reg_prefix=True)
+                lines.append(f"{self._indent(6)}reg_{stmt.var_name} <= {start};")
         lines.append(f"{self._indent(6)}state <= STATE_EXEC;")
         lines.append(f"{self._indent(5)}end")
         lines.append(f"{self._indent(4)}end")
@@ -343,8 +350,7 @@ class VerilogEmitter:
         lines.append(f"{self._indent(2)}#10 start = 0;")
         lines.append(f"{self._indent(2)}@(posedge tb_done);")
         lines.append(f"{self._indent(2)}#10;")
-        disp_args = ", ".join(f"tb_{p.name}" for p in fn.params)
-        lines.append(f"{self._indent(2)}$display(\"INPUTS: {disp_args} => RESULT: %0d\", tb_result);")
+        lines.append(f"{self._indent(2)}$display(\"%0d\", tb_result);")
         lines.append(f"{self._indent(2)}$finish;")
         lines.append(f"{ind}end")
         lines.append("")
@@ -451,6 +457,16 @@ class VerilogEmitter:
 
     def _extract_call_args(self, func_name: str, stmts: List[Statement]) -> List[str]:
         """Extracts constant numeric arguments from global statements calling the function."""
+        constant_values: Dict[str, int] = {}
+        for stmt in stmts:
+            if (
+                isinstance(stmt, Assignment)
+                and isinstance(stmt.target, Identifier)
+                and isinstance(stmt.value, Literal)
+                and isinstance(stmt.value.value, int)
+            ):
+                constant_values[stmt.target.name] = stmt.value.value
+
         for s in stmts:
             call = None
             if isinstance(s, ExpressionStmt) and isinstance(s.expr, FunctionCall):
@@ -468,7 +484,8 @@ class VerilogEmitter:
                     if isinstance(a, Literal) and isinstance(a.value, int):
                         args.append(f"{self.default_bit_width}'d{a.value}")
                     elif isinstance(a, Identifier):
-                        args.append(f"{self.default_bit_width}'d10")
+                        value = constant_values.get(a.name, 10)
+                        args.append(f"{self.default_bit_width}'d{value}")
                 return args
         return []
 

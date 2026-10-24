@@ -10,6 +10,7 @@ from app.ir.nodes import (
         FunctionCall, IRType, TypeKind, ImportStmt,
         ForEachStmt, AugmentedAssignment, CastExpr
     )
+from app.parsers.diagnostics import attach_tree_diagnostics
 
 class GoParser:
     def __init__(self):
@@ -49,7 +50,11 @@ class GoParser:
             elif child.type == "import_declaration":
                 imports.extend(self._parse_import(child, code_bytes))
 
-        return Program(functions=functions, global_statements=global_statements, imports=imports)
+        return attach_tree_diagnostics(
+            Program(functions=functions, global_statements=global_statements, imports=imports),
+            root,
+            code_bytes,
+        )
 
     def _parse_import(self, node: Node, code_bytes: bytes) -> List[ImportStmt]:
         stmts = []

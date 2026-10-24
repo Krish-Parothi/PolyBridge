@@ -9,7 +9,8 @@ from app.ir.nodes import (
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
         FunctionCall, IRType, TypeKind, ImportStmt,
         ForEachStmt, AugmentedAssignment, DoWhileStmt, TernaryOp, CastExpr
-    )
+)
+from app.parsers.diagnostics import attach_tree_diagnostics
 
 class JavaParser:
     def __init__(self):
@@ -43,11 +44,15 @@ class JavaParser:
                 stmts = self._parse_statement(child, code_bytes)
                 if stmts:
                     global_statements.extend(stmts)
-            return Program(functions=functions, global_statements=global_statements, imports=imports)
+            return attach_tree_diagnostics(
+                Program(functions=functions, global_statements=global_statements, imports=imports),
+                root,
+                code_bytes,
+            )
 
         class_body = class_node.child_by_field_name("body")
         if not class_body:
-            return Program(imports=imports)
+            return attach_tree_diagnostics(Program(imports=imports), root, code_bytes)
 
         for child in class_body.children:
             if child.type == "method_declaration":
@@ -67,7 +72,11 @@ class JavaParser:
                     if fn:
                         functions.append(fn)
 
-        return Program(functions=functions, global_statements=global_statements, imports=imports)
+        return attach_tree_diagnostics(
+            Program(functions=functions, global_statements=global_statements, imports=imports),
+            root,
+            code_bytes,
+        )
 
     def _parse_import(self, node: Node, code_bytes: bytes) -> Optional[ImportStmt]:
         for c in node.children:

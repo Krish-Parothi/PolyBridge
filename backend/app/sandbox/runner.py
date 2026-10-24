@@ -40,6 +40,8 @@ class CodeRunner:
             return cls._run_java(code, stdin_data)
         elif lang in ["go", "golang"]:
             return cls._run_go(code, stdin_data)
+        elif lang in ["cpp", "c++", "cxx"]:
+            return cls._run_cpp(code, stdin_data)
         elif lang in ["verilog", "v"]:
             return cls._run_verilog(code, stdin_data)
         elif lang in ["arduino", "ino"]:
@@ -176,8 +178,8 @@ class CodeRunner:
 
             env = os.environ.copy()
             go_dir = os.path.dirname(go_bin)
-            if go_dir not in env.get("PATH", ""):
-                env["PATH"] = f"{go_dir};{env.get('PATH', '')}"
+            if go_dir not in env.get("PATH", "").split(os.pathsep):
+                env["PATH"] = os.pathsep.join([go_dir, env.get("PATH", "")])
 
             # Build first to distinguish compilation errors from runtime errors
             bin_name = "solution.exe" if os.name == "nt" else "solution"
@@ -216,6 +218,80 @@ class CodeRunner:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     @classmethod
+    def _run_cpp(cls, code: str, stdin_data: str) -> ExecutionResult:
+        """Compile and execute a standalone C++20 translation unit."""
+        start_time = time.perf_counter()
+        compiler = shutil.which("g++") or shutil.which("clang++")
+        if not compiler:
+            return ExecutionResult(
+                "",
+                "C++ compiler ('g++' or 'clang++') not found in PATH",
+                -1,
+                0,
+                "C++ compiler not found",
+                "runtime_unavailable",
+            )
+
+        temp_dir = tempfile.mkdtemp(prefix="pb_cpp_")
+        try:
+            source_file = os.path.join(temp_dir, "main.cpp")
+            binary_name = "solution.exe" if os.name == "nt" else "solution"
+            binary_path = os.path.join(temp_dir, binary_name)
+            with open(source_file, "w", encoding="utf-8") as f:
+                f.write(code)
+
+            compile_res = subprocess.run(
+                [compiler, "-std=c++20", "-O2", "-o", binary_path, source_file],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                timeout=max(cls.TIMEOUT_SECONDS, 15),
+            )
+            if compile_res.returncode != 0:
+                duration = (time.perf_counter() - start_time) * 1000
+                return ExecutionResult(
+                    compile_res.stdout,
+                    compile_res.stderr,
+                    compile_res.returncode,
+                    duration,
+                    "Compilation Error",
+                    "compilation_error",
+                )
+
+            run_res = subprocess.run(
+                [binary_path],
+                cwd=temp_dir,
+                input=stdin_data,
+                capture_output=True,
+                text=True,
+                timeout=cls.TIMEOUT_SECONDS,
+            )
+            duration = (time.perf_counter() - start_time) * 1000
+            if run_res.returncode != 0:
+                return ExecutionResult(
+                    run_res.stdout,
+                    run_res.stderr,
+                    run_res.returncode,
+                    duration,
+                    "Runtime Error",
+                    "runtime_error",
+                )
+            return ExecutionResult(run_res.stdout, run_res.stderr, 0, duration, None, "success")
+        except subprocess.TimeoutExpired:
+            return ExecutionResult(
+                "",
+                f"Execution timed out ({cls.TIMEOUT_SECONDS}s limit exceeded)",
+                -1,
+                cls.TIMEOUT_SECONDS * 1000,
+                "Timeout",
+                "timeout",
+            )
+        except Exception as e:
+            return ExecutionResult("", str(e), -1, 0, str(e), "runtime_error")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    @classmethod
     def _run_verilog(cls, code: str, stdin_data: str) -> ExecutionResult:
         start_time = time.perf_counter()
         iverilog_bin = shutil.which("iverilog")
@@ -223,12 +299,12 @@ class CodeRunner:
 
         if not iverilog_bin or not vvp_bin:
             return ExecutionResult(
-                "// Synthesizable Verilog RTL verified structurally.\n// Install 'iverilog' & 'vvp' (Icarus Verilog) for cycle-accurate local simulation, or run directly on EDA Playground.",
                 "",
+                "Icarus Verilog ('iverilog' and 'vvp') is not available; RTL was not behaviorally verified.",
+                -1,
                 0,
-                0,
-                None,
-                "success"
+                "Verilog simulator unavailable",
+                "runtime_unavailable"
             )
 
         temp_dir = tempfile.mkdtemp(prefix="pb_v_")
@@ -278,12 +354,12 @@ class CodeRunner:
 
         if not gpp:
             return ExecutionResult(
-                "// Arduino sketch (.ino) verified structurally.\n// Open in Arduino IDE or flash directly to Arduino Uno / ESP32 board.",
                 "",
+                "A C++ compiler is required for the Arduino host mock; sketch was not behaviorally verified.",
+                -1,
                 0,
-                0,
-                None,
-                "success"
+                "Arduino host compiler unavailable",
+                "runtime_unavailable"
             )
 
         # Mock Arduino core wrapper for local compilation & verification
@@ -301,7 +377,12 @@ struct MockSerial {
 } Serial;
 void delay(int) {}
 """
-        sim_code = code.replace("#include <Arduino.h>", arduino_mock_header)
+        if "#include <Arduino.h>" in code:
+            sim_code = code.replace("#include <Arduino.h>", arduino_mock_header)
+        else:
+            # Hand-written .ino files commonly rely on the Arduino IDE to
+            # inject Arduino.h.  The host mock must provide the same symbols.
+            sim_code = arduino_mock_header + "\n" + code
         sim_code += "\n\nint main() {\n    setup();\n    return 0;\n}\n"
 
         temp_dir = tempfile.mkdtemp(prefix="pb_arduino_")

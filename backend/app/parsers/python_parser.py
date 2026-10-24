@@ -9,7 +9,8 @@ from app.ir.nodes import (
         BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess, ArrayLength,
         FunctionCall, IRType, TypeKind, ImportStmt, AugmentedAssignment,
         TernaryOp, CastExpr, MethodCall
-    )
+)
+from app.parsers.diagnostics import attach_tree_diagnostics
 
 CAST_FUNCTIONS = {"int", "float", "str", "bool"}
 
@@ -54,7 +55,11 @@ class PythonParser:
                 if stmts:
                     global_statements.extend(stmts)
 
-        return Program(functions=functions, global_statements=global_statements, imports=imports)
+        return attach_tree_diagnostics(
+            Program(functions=functions, global_statements=global_statements, imports=imports),
+            root,
+            code_bytes,
+        )
 
     def _parse_import(self, node: Node, code_bytes: bytes) -> Optional[ImportStmt]:
         if node.type == "import_statement":

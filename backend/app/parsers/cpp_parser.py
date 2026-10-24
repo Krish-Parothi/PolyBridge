@@ -7,8 +7,9 @@ from app.ir.nodes import (
     VarDecl, Assignment, IfStmt, WhileStmt, ForRangeStmt,
     ReturnStmt, BreakStmt, ContinueStmt, PrintStmt, ExpressionStmt,
     Literal, Identifier, BinaryOp, UnaryOp, ArrayLiteral, ArrayAccess,
-    ArrayLength, FunctionCall, IRType, TypeKind, ImportStmt
+    ArrayLength, FunctionCall, IRType, TypeKind, ImportStmt, ForEachStmt
 )
+from app.parsers.diagnostics import attach_tree_diagnostics
 
 class CppParser:
     """Parses C++20 code into PolyBridge Universal IR."""
@@ -54,7 +55,11 @@ class CppParser:
                     if fn:
                         functions.append(fn)
 
-        return Program(functions=functions, global_statements=global_statements, imports=imports)
+        return attach_tree_diagnostics(
+            Program(functions=functions, global_statements=global_statements, imports=imports),
+            root,
+            code_bytes,
+        )
 
     def _get_text(self, node: Node, code_bytes: bytes) -> str:
         return code_bytes[node.start_byte:node.end_byte].decode("utf-8")
@@ -287,6 +292,23 @@ class CppParser:
                 body=body_stmts
             )]
 
+        elif ntype == "for_range_loop":
+            # C++ range-for: for (int item : iterable) { ... }
+            decl_n = node.child_by_field_name("declarator")
+            right_n = node.child_by_field_name("right")
+            body_n = node.child_by_field_name("body")
+            var_name = self._get_text(decl_n, code_bytes).strip() if decl_n else "item"
+            iterable = self._parse_expression(right_n, code_bytes) if right_n else None
+            body_stmts: List[Statement] = []
+            if body_n:
+                if body_n.type == "compound_statement":
+                    for c in body_n.children:
+                        if c.type not in ["{", "}"]:
+                            body_stmts.extend(self._parse_statement(c, code_bytes))
+                else:
+                    body_stmts.extend(self._parse_statement(body_n, code_bytes))
+            return [ForEachStmt(var_name=var_name, iterable=iterable, body=body_stmts)]
+
         elif ntype == "for_statement":
             # Check if canonical counting for loop: for (int i = 0; i < N; i++)
             init_n = node.child_by_field_name("initializer")
@@ -314,7 +336,7 @@ class CppParser:
                 return [ForRangeStmt(
                     var_name=var_name,
                     start=start_expr,
-                    stop=stop_expr,
+                    end=stop_expr,
                     step=step_expr,
                     body=body_stmts
                 )]

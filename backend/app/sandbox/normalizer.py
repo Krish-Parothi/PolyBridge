@@ -33,10 +33,10 @@ class OutputNormalizer:
         cleaned = output.replace("\r\n", "\n").replace("\r", "\n")
 
         # Collapse multiline arrays like Node.js console.log([1, 2,\n 3, 4])
-        # Find any [...] spanning multiple lines and replace newlines/extra spaces with single spaces
+        # Find any [...] spanning multiple lines and normalize only the array
+        # interior; ordinary string output is left byte-for-byte meaningful.
         def collapse_brackets(match):
             inner = match.group(1)
-            # Remove internal newlines and collapse multiple spaces
             inner_clean = " ".join(inner.split())
             return f"[{inner_clean}]"
 
@@ -56,9 +56,13 @@ class OutputNormalizer:
                 tokens = [cls.normalize_token(t) for t in re.split(r"[,\s]+", inner) if t]
                 normalized_lines.append("[" + ", ".join(tokens) + "]")
             else:
-                # Token-based normalization
-                tokens = [cls.normalize_token(t) for t in stripped.split()]
-                normalized_lines.append(" ".join(tokens))
+                # Preserve internal whitespace in ordinary output. Normalize
+                # only a line that is a single scalar token so "a  b" cannot
+                # accidentally compare equal to "a b".
+                if len(stripped.split()) == 1:
+                    normalized_lines.append(cls.normalize_token(stripped))
+                else:
+                    normalized_lines.append(stripped)
 
         return "\n".join(normalized_lines)
 
