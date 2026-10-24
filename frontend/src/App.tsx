@@ -1049,7 +1049,7 @@ export const App: React.FC = () => {
                 <option value="javascript">JavaScript (ES6)</option>
                 <option value="java">Java 17</option>
                 <option value="go">Go 1.21</option>
-                <option value="cpp">C++ 20</option>
+                
                 <option value="verilog">Verilog 2001 (HDL)</option>
                 <option value="arduino">Arduino C++ (.ino)</option>
               </select>
